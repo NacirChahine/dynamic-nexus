@@ -45,10 +45,10 @@
     // --- ADVANCED CONFIGURATION ---
     const ATTRACTION_RADIUS = 800;
     const MERGE_DISTANCE = 100;
-    const PARTICLE_COUNT = 150;
-    const PARTICLE_LIFESPAN = 80;
-    const PARTICLE_COLOR = 'rgba(22, 163, 74, 0.7)'; // Green
-    const CORE_COLOR = '#16a34a';
+    const PARTICLE_COUNT = 75; // Per window
+    const PARTICLE_LIFESPAN = 100;
+    const CORE_COLOR = '#16a34a'; // Green
+    const PARTICLE_COLOR = 'rgba(34, 197, 94, 0.8)';
 
     // --- SETUP ---
     const canvas = document.getElementById('canvas');
@@ -58,17 +58,19 @@
     let openerWindowPos = null;
     let lastSeenTimestamp = 0;
     let particles = [];
+    let transferredParticles = [];
     let stars = [];
 
     // --- PARTICLE CLASS ---
     class Particle {
-        constructor(x, y) {
+        constructor({x, y, vx = (Math.random() - 0.5) * 2, vy = (Math.random() - 0.5) * 2, life = Math.random() * PARTICLE_LIFESPAN, color}) {
             this.x = x;
             this.y = y;
-            this.vx = (Math.random() - 0.5) * 2;
-            this.vy = (Math.random() - 0.5) * 2;
-            this.life = Math.random() * PARTICLE_LIFESPAN;
-            this.baseLife = this.life;
+            this.vx = vx;
+            this.vy = vy;
+            this.life = life;
+            this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
+            this.color = color;
         }
 
         update(attractorX, attractorY, attractionForce) {
@@ -83,15 +85,14 @@
 
             this.x += this.vx;
             this.y += this.vy;
-            this.vx *= 0.96;
-            this.vy *= 0.96;
-
+            this.vx *= 0.97;
+            this.vy *= 0.97;
             this.life--;
         }
 
         draw() {
-            const alpha = this.life / this.baseLife;
-            ctx.fillStyle = `rgba(22, 163, 74, ${alpha * 0.7})`;
+            const alpha = (this.life / this.baseLife) * 0.8;
+            ctx.fillStyle = this.color.replace(/[\d\.]+\)$/g, `${alpha})`);
             ctx.beginPath();
             ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
             ctx.fill();
@@ -101,25 +102,17 @@
     // --- INITIALIZATION ---
     function init() {
         window.addEventListener('resize', resizeCanvas);
-        resizeCanvas(); // Initial setup of canvas and stars
-
+        resizeCanvas();
         animate();
     }
 
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-
-        // Regenerate stars on resize to ensure they are created with correct dimensions
         stars = [];
         if (canvas.width > 0 && canvas.height > 0) {
             for (let i = 0; i < 200; i++) {
-                // FIX: Ensure z is always less than 3 to prevent negative radius
-                stars.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    z: Math.random() * 2.5 + 0.5
-                });
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
             }
         }
     }
@@ -127,9 +120,12 @@
     // --- COMMUNICATION ---
     const channel = new BroadcastChannel('portal_nexus_channel');
     channel.onmessage = (event) => {
-        if (event.data && event.data.type === 'pos1') {
+        if (!event.data) return;
+        if (event.data.type === 'pos1') {
             openerWindowPos = event.data.data;
             lastSeenTimestamp = Date.now();
+        } else if (event.data.type === 'particle_transfer' && event.data.target === 2) {
+            transferredParticles.push(new Particle(event.data.particle));
         }
     };
 
@@ -141,11 +137,11 @@
         const myPos = getMyPosition();
         channel.postMessage({ type: 'pos2', data: myPos });
 
-        const openerWindowPresent = Date.now() - lastSeenTimestamp < 1000;
+        const openerWindowPresent = Date.now() - lastSeenTimestamp < 1500;
 
         if (!openerWindowPresent) {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Link Lost`;
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
             requestAnimationFrame(animate);
             return;
         }
@@ -158,20 +154,61 @@
         } else if (dist < ATTRACTION_RADIUS) {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Filaments Active`;
             updateAndDrawFilaments(myPos, openerWindowPos, dist);
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
         } else {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Stable`;
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
         }
 
         requestAnimationFrame(animate);
     }
 
     // --- DRAWING & LOGIC FUNCTIONS ---
-    function drawStarfield() {
-        // Guard against drawing if canvas has no area
-        if (canvas.width === 0 || canvas.height === 0) return;
+    function updateAndDrawFilaments(myPos, otherPos, dist) {
+        if (particles.length < PARTICLE_COUNT) {
+            particles.push(new Particle({x: myPos.cx, y: myPos.cy, color: PARTICLE_COLOR}));
+        }
 
+        const attractorX = otherPos.x - myPos.x + otherPos.cx;
+        const attractorY = otherPos.y - myPos.y + otherPos.cy;
+        const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
+
+        updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
+        updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
+    }
+
+    function updateParticleList(list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId) {
+        for (let i = list.length - 1; i >= 0; i--) {
+            const p = list[i];
+            p.update(attractorX, attractorY, attractionForce * 0.5);
+
+            const screenX = myPos.x + p.x;
+            const screenY = myPos.y + p.y;
+
+            if (otherPos && screenX >= otherPos.x && screenX <= otherPos.x + otherPos.width && screenY >= otherPos.y && screenY <= otherPos.y + otherPos.height) {
+                channel.postMessage({
+                    type: 'particle_transfer',
+                    target: targetId,
+                    particle: {
+                        x: screenX - otherPos.x,
+                        y: screenY - otherPos.y,
+                        vx: p.vx,
+                        vy: p.vy,
+                        life: p.life,
+                        color: p.color
+                    }
+                });
+                list.splice(i, 1);
+                continue;
+            }
+
+            p.draw();
+            if (p.life <= 0) list.splice(i, 1);
+        }
+    }
+
+    function drawStarfield() {
+        if (canvas.width === 0 || canvas.height === 0) return;
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
             const x = (star.x - window.screenX / (star.z * 5)) % canvas.width;
@@ -185,54 +222,29 @@
         ctx.globalAlpha = 1;
     }
 
-    function drawCore(x, y, color) {
-        const baseRadius = 40;
+    function drawCore(x, y, color, baseRadius) {
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
-
         const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
         grad.addColorStop(0, `${color}80`);
         grad.addColorStop(1, `${color}00`);
         ctx.fillStyle = grad;
         ctx.fillRect(x - radius * 2, y - radius * 2, radius * 4, radius * 4);
-
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    function updateAndDrawFilaments(myPos, otherPos, dist) {
-        const attractorX = otherPos.x - myPos.x + otherPos.cx;
-        const attractorY = otherPos.y - myPos.y + otherPos.cy;
-        const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
-
-        if (particles.length < PARTICLE_COUNT) {
-            particles.push(new Particle(myPos.cx, myPos.cy));
-        }
-
-        particles.forEach((p, index) => {
-            p.update(attractorX, attractorY, attractionForce * 0.5);
-            p.draw();
-            if (p.life <= 0) {
-                particles.splice(index, 1);
-            }
-        });
-    }
-
     // --- HELPERS ---
     function getMyPosition() {
-        return {
-            x: window.screenX, y: window.screenY,
-            width: window.outerWidth, height: window.outerHeight,
-            cx: window.innerWidth / 2, cy: window.innerHeight / 2
-        };
+        return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
     }
 
     function calculateDistance(pos1, pos2) {
         const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
         const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
-        return { dist: Math.sqrt(dx * dx + dy * dy), dx, dy };
+        return { dist: Math.sqrt(dx * dx + dy * dy) };
     }
 
     init();

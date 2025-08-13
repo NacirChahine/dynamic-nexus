@@ -43,12 +43,12 @@
 
 <script>
     // --- ADVANCED CONFIGURATION ---
-    const ATTRACTION_RADIUS = 800; // Max distance to start showing filaments
-    const MERGE_DISTANCE = 100;    // Distance to trigger the merge supernova
-    const PARTICLE_COUNT = 150;    // Number of filament particles
-    const PARTICLE_LIFESPAN = 80;  // How long particles live
-    const PARTICLE_COLOR = 'rgba(59, 130, 246, 0.7)'; // Blue
-    const CORE_COLOR = '#3b82f6';
+    const ATTRACTION_RADIUS = 800;
+    const MERGE_DISTANCE = 100;
+    const PARTICLE_COUNT = 75; // Per window
+    const PARTICLE_LIFESPAN = 100;
+    const CORE_COLOR = '#3b82f6'; // Blue
+    const PARTICLE_COLOR = 'rgba(59, 130, 246, 0.8)';
     const MERGED_COLOR = '#a855f7'; // Purple
 
     // --- SETUP ---
@@ -59,19 +59,20 @@
     let otherWindowPos = null;
     let lastSeenTimestamp = 0;
     let particles = [];
+    let transferredParticles = [];
     let stars = [];
-    let mergeState = { active: false, progress: 0, maxRadius: 0 };
     let popupBlocked = false;
 
     // --- PARTICLE CLASS ---
     class Particle {
-        constructor(x, y) {
+        constructor({x, y, vx = (Math.random() - 0.5) * 2, vy = (Math.random() - 0.5) * 2, life = Math.random() * PARTICLE_LIFESPAN, color}) {
             this.x = x;
             this.y = y;
-            this.vx = (Math.random() - 0.5) * 2;
-            this.vy = (Math.random() - 0.5) * 2;
-            this.life = Math.random() * PARTICLE_LIFESPAN;
-            this.baseLife = this.life;
+            this.vx = vx;
+            this.vy = vy;
+            this.life = life;
+            this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
+            this.color = color;
         }
 
         update(attractorX, attractorY, attractionForce) {
@@ -86,15 +87,14 @@
 
             this.x += this.vx;
             this.y += this.vy;
-            this.vx *= 0.96;
-            this.vy *= 0.96;
-
+            this.vx *= 0.97;
+            this.vy *= 0.97;
             this.life--;
         }
 
         draw() {
-            const alpha = this.life / this.baseLife;
-            ctx.fillStyle = `rgba(59, 130, 246, ${alpha * 0.7})`;
+            const alpha = (this.life / this.baseLife) * 0.8;
+            ctx.fillStyle = this.color.replace(/[\d\.]+\)$/g, `${alpha})`); // Replace alpha
             ctx.beginPath();
             ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
             ctx.fill();
@@ -104,13 +104,10 @@
     // --- INITIALIZATION ---
     function init() {
         window.addEventListener('resize', resizeCanvas);
-        resizeCanvas(); // Initial setup of canvas and stars
+        resizeCanvas();
 
-        // Open the other window and check if it was blocked
         const newWindow = window.open('window2.html', 'PortalWindow2', 'width=400,height=400,left=600,top=200');
-        if (!newWindow) {
-            popupBlocked = true;
-        }
+        if (!newWindow) popupBlocked = true;
 
         animate();
     }
@@ -118,16 +115,10 @@
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-
         stars = [];
         if (canvas.width > 0 && canvas.height > 0) {
             for (let i = 0; i < 200; i++) {
-                // FIX: Ensure z is always less than 3 to prevent negative radius
-                stars.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    z: Math.random() * 2.5 + 0.5
-                });
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
             }
         }
     }
@@ -135,9 +126,12 @@
     // --- COMMUNICATION ---
     const channel = new BroadcastChannel('portal_nexus_channel');
     channel.onmessage = (event) => {
-        if (event.data && event.data.type === 'pos2') {
+        if (!event.data) return;
+        if (event.data.type === 'pos2') {
             otherWindowPos = event.data.data;
             lastSeenTimestamp = Date.now();
+        } else if (event.data.type === 'particle_transfer' && event.data.target === 1) {
+            transferredParticles.push(new Particle(event.data.particle));
         }
     };
 
@@ -149,43 +143,81 @@
         const myPos = getMyPosition();
         channel.postMessage({ type: 'pos1', data: myPos });
 
-        const otherWindowPresent = Date.now() - lastSeenTimestamp < 1000;
+        const otherWindowPresent = Date.now() - lastSeenTimestamp < 1500;
 
         if (!otherWindowPresent) {
-            if (popupBlocked) {
-                infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Pop-up Blocked`;
-                drawPopupBlockedMessage(myPos);
-            } else {
-                infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`;
-            }
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            handleNoLink(myPos);
             requestAnimationFrame(animate);
             return;
         }
 
         const { dist } = calculateDistance(myPos, otherWindowPos);
 
-        if (mergeState.active) {
-            runMergeAnimation(myPos);
-        } else if (dist < MERGE_DISTANCE) {
-            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: MERGE IMMINENT`;
-            startMerge(myPos);
+        if (dist < MERGE_DISTANCE) {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: MERGED`;
+            drawCore(myPos.cx, myPos.cy, MERGED_COLOR, 60); // Draw large merged core
         } else if (dist < ATTRACTION_RADIUS) {
             infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Filaments Active`;
             updateAndDrawFilaments(myPos, otherWindowPos, dist);
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
         } else {
             infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Stable`;
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
         }
 
         requestAnimationFrame(animate);
     }
 
     // --- DRAWING & LOGIC FUNCTIONS ---
+    function updateAndDrawFilaments(myPos, otherPos, dist) {
+        // Spawn new particles
+        if (particles.length < PARTICLE_COUNT) {
+            particles.push(new Particle({x: myPos.cx, y: myPos.cy, color: PARTICLE_COLOR}));
+        }
+
+        const attractorX = otherPos.x - myPos.x + otherPos.cx;
+        const attractorY = otherPos.y - myPos.y + otherPos.cy;
+        const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
+
+        // Update and draw native particles
+        updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 2);
+        // Update and draw transferred particles
+        updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 2);
+    }
+
+    function updateParticleList(list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId) {
+        for (let i = list.length - 1; i >= 0; i--) {
+            const p = list[i];
+            p.update(attractorX, attractorY, attractionForce * 0.5);
+
+            const screenX = myPos.x + p.x;
+            const screenY = myPos.y + p.y;
+
+            // Check for transfer
+            if (otherPos && screenX >= otherPos.x && screenX <= otherPos.x + otherPos.width && screenY >= otherPos.y && screenY <= otherPos.y + otherPos.height) {
+                channel.postMessage({
+                    type: 'particle_transfer',
+                    target: targetId,
+                    particle: {
+                        x: screenX - otherPos.x,
+                        y: screenY - otherPos.y,
+                        vx: p.vx,
+                        vy: p.vy,
+                        life: p.life,
+                        color: p.color
+                    }
+                });
+                list.splice(i, 1);
+                continue;
+            }
+
+            p.draw();
+            if (p.life <= 0) list.splice(i, 1);
+        }
+    }
+
     function drawStarfield() {
         if (canvas.width === 0 || canvas.height === 0) return;
-
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
             const x = (star.x - window.screenX / (star.z * 5)) % canvas.width;
@@ -199,88 +231,42 @@
         ctx.globalAlpha = 1;
     }
 
-    function drawPopupBlockedMessage(myPos) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.font = '16px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('Pop-up was blocked.', myPos.cx, myPos.cy - 10);
-        ctx.fillText('Please open "window2.html" manually.', myPos.cx, myPos.cy + 10);
-    }
-
-    function drawCore(x, y, color) {
-        const baseRadius = 40;
+    function drawCore(x, y, color, baseRadius) {
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
-
         const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
         grad.addColorStop(0, `${color}80`);
         grad.addColorStop(1, `${color}00`);
         ctx.fillStyle = grad;
         ctx.fillRect(x - radius * 2, y - radius * 2, radius * 4, radius * 4);
-
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    function updateAndDrawFilaments(myPos, otherPos, dist) {
-        const attractorX = otherPos.x - myPos.x + otherPos.cx;
-        const attractorY = otherPos.y - myPos.y + otherPos.cy;
-        const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
-
-        if (particles.length < PARTICLE_COUNT) {
-            particles.push(new Particle(myPos.cx, myPos.cy));
+    function handleNoLink(myPos) {
+        if (popupBlocked) {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Pop-up Blocked`;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.font = '16px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText('Pop-up blocked. Please open "window2.html" manually.', myPos.cx, myPos.cy);
+        } else {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`;
         }
-
-        particles.forEach((p, index) => {
-            p.update(attractorX, attractorY, attractionForce * 0.5);
-            p.draw();
-            if (p.life <= 0) {
-                particles.splice(index, 1);
-            }
-        });
-    }
-
-    function startMerge(myPos) {
-        mergeState.active = true;
-        mergeState.progress = 0;
-        mergeState.maxRadius = Math.max(myPos.width, myPos.height) * 1.5;
-    }
-
-    function runMergeAnimation(myPos) {
-        infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: MERGED`;
-        mergeState.progress += 0.01;
-
-        if (mergeState.progress > 1) {
-            mergeState.progress = 1;
-        }
-
-        const easeOut = 1 - Math.pow(1 - mergeState.progress, 3);
-
-        const shockwaveRadius = easeOut * mergeState.maxRadius;
-        ctx.strokeStyle = `${MERGED_COLOR}${Math.round((1-easeOut) * 255).toString(16).padStart(2, '0')}`;
-        ctx.lineWidth = 5 * (1 - easeOut);
-        ctx.beginPath();
-        ctx.arc(myPos.cx, myPos.cy, shockwaveRadius, 0, Math.PI * 2);
-        ctx.stroke();
-
-        drawCore(myPos.cx, myPos.cy, MERGED_COLOR);
+        drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
     }
 
     // --- HELPERS ---
     function getMyPosition() {
-        return {
-            x: window.screenX, y: window.screenY,
-            width: window.outerWidth, height: window.outerHeight,
-            cx: window.innerWidth / 2, cy: window.innerHeight / 2
-        };
+        return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
     }
 
     function calculateDistance(pos1, pos2) {
         const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
         const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
-        return { dist: Math.sqrt(dx * dx + dy * dy), dx, dy };
+        return { dist: Math.sqrt(dx * dx + dy * dy) };
     }
 
     init();
