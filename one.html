@@ -3,187 +3,287 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Window 1</title>
+    <title>Core Nexus 1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            overflow: hidden; /* Prevent scrollbars */
+            overflow: hidden;
+            background-color: #000005;
         }
         canvas {
             display: block;
             position: absolute;
             top: 0;
             left: 0;
+            z-index: 1;
         }
+        .info {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            color: #9ca3af;
+            font-size: 0.875rem;
+            border: 1px solid #374151;
+        }
+        .info strong { color: #e5e7eb; }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex items-center justify-center h-screen">
+<body>
+<div class="info">
+    <strong>Core Nexus 1</strong><br>
+    Status: Awaiting Link
+</div>
+<canvas id="canvas"></canvas>
 
-    <div class="absolute top-5 left-5 bg-gray-800 bg-opacity-70 p-3 rounded-lg text-sm z-10">
-        <p class="font-bold">Window 1 (Primary)</p>
-        <p>Drag this window next to Window 2.</p>
-    </div>
+<script>
+    // --- ADVANCED CONFIGURATION ---
+    const ATTRACTION_RADIUS = 800; // Max distance to start showing filaments
+    const MERGE_DISTANCE = 100;    // Distance to trigger the merge supernova
+    const PARTICLE_COUNT = 150;    // Number of filament particles
+    const PARTICLE_LIFESPAN = 80;  // How long particles live
+    const PARTICLE_COLOR = 'rgba(59, 130, 246, 0.7)'; // Blue
+    const CORE_COLOR = '#3b82f6';
+    const MERGED_COLOR = '#a855f7'; // Purple
 
-    <canvas id="canvas"></canvas>
+    // --- SETUP ---
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const infoStatus = document.querySelector('.info');
 
-    <script>
-        // --- Setup ---
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        let otherWindowPos = null;
-        let otherWindowPresent = false;
-        let lastSeenTimestamp = 0;
+    let otherWindowPos = null;
+    let lastSeenTimestamp = 0;
+    let particles = [];
+    let stars = [];
+    let mergeState = { active: false, progress: 0, maxRadius: 0 };
+    let popupBlocked = false;
 
-        // Set canvas to full window size
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // --- Window Communication (Using BroadcastChannel) ---
-        const channel = new BroadcastChannel('portal_channel');
-
-        // Open the second window (optional, user can open manually)
-        window.open('window2.html', 'PortalWindow2', 'width=400,height=400,left=600,top=200');
-
-        // Listen for messages on the channel
-        channel.onmessage = (event) => {
-            // We only care about messages from the other window
-            if (event.data && event.data.type === 'pos2') {
-                otherWindowPos = event.data.data;
-                otherWindowPresent = true;
-                lastSeenTimestamp = Date.now(); // Record when we last heard from the other window
-            }
-        };
-
-        // --- Drawing and Animation Loop ---
-        function animate() {
-            // Clear the canvas on each frame
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Get current window's position on the screen
-            const myPos = {
-                x: window.screenX,
-                y: window.screenY,
-                width: window.outerWidth,
-                height: window.outerHeight,
-                cx: window.innerWidth / 2, // center x of the canvas
-                cy: window.innerHeight / 2 // center y of the canvas
-            };
-            
-            // Sphere properties
-            const mySphereRadius = 50;
-            const sphereColor = '#4f46e5'; // Indigo
-            const connectionColor = '#10b981'; // Emerald
-            const mergedColor = '#db2777'; // Fuchsia
-
-            // Broadcast my position to any listening windows
-            channel.postMessage({ type: 'pos1', data: myPos });
-
-            // Check if we haven't heard from the other window in a while
-            if (Date.now() - lastSeenTimestamp > 1000) { // 1 second timeout
-                otherWindowPresent = false;
-            }
-
-            if (!otherWindowPresent) {
-                // If the other window is closed, just draw a message
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.font = '16px Inter';
-                ctx.textAlign = 'center';
-                ctx.fillText('Waiting for the other window...', myPos.cx, myPos.cy);
-                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor); // Still draw my own sphere
-                requestAnimationFrame(animate);
-                return;
-            }
-
-            // --- Interaction Logic ---
-            if (otherWindowPos) {
-                // Calculate the distance between the centers of the two windows
-                const dist_x = (myPos.x + myPos.width / 2) - (otherWindowPos.x + otherWindowPos.width / 2);
-                const dist_y = (myPos.y + myPos.height / 2) - (otherWindowPos.y + otherWindowPos.height / 2);
-                const centerDistance = Math.sqrt(dist_x * dist_x + dist_y * dist_y);
-
-                // Calculate horizontal and vertical adjacency
-                const horizontalAdjacency = myPos.x + myPos.width;
-                const verticalAdjacency = myPos.y + myPos.height;
-                const adjacencyThreshold = 25; // How close they need to be to connect
-
-                // State 1: Merged
-                if (centerDistance < 75) {
-                    ctx.fillStyle = mergedColor;
-                    ctx.beginPath();
-                    // Draw a larger, pulsing "merged" sphere
-                    const mergedRadius = mySphereRadius + 25 + Math.sin(Date.now() * 0.005) * 5;
-                    ctx.arc(myPos.cx, myPos.cy, mergedRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                
-                // State 2: Connected Horizontally
-                } else if (Math.abs(horizontalAdjacency - otherWindowPos.x) < adjacencyThreshold) {
-                     drawConnection(myPos, otherWindowPos, 'horizontal', connectionColor, sphereColor);
-
-                // State 3: Connected Vertically
-                } else if (Math.abs(verticalAdjacency - otherWindowPos.y) < adjacencyThreshold) {
-                    drawConnection(myPos, otherWindowPos, 'vertical', connectionColor, sphereColor);
-
-                // State 4: Separate
-                } else {
-                    drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
-                }
-
-            } else {
-                // Default state if we haven't received data yet
-                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
-            }
-
-            // Loop forever
-            requestAnimationFrame(animate);
+    // --- PARTICLE CLASS ---
+    class Particle {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.vx = (Math.random() - 0.5) * 2;
+            this.vy = (Math.random() - 0.5) * 2;
+            this.life = Math.random() * PARTICLE_LIFESPAN;
+            this.baseLife = this.life;
         }
 
-        // --- Helper Drawing Functions ---
-        function drawSphere(x, y, radius, color) {
-            ctx.fillStyle = color;
+        update(attractorX, attractorY, attractionForce) {
+            const dx = attractorX - this.x;
+            const dy = attractorY - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > 1) {
+                this.vx += (dx / dist) * attractionForce;
+                this.vy += (dy / dist) * attractionForce;
+            }
+
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vx *= 0.96;
+            this.vy *= 0.96;
+
+            this.life--;
+        }
+
+        draw() {
+            const alpha = this.life / this.baseLife;
+            ctx.fillStyle = `rgba(59, 130, 246, ${alpha * 0.7})`;
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
             ctx.fill();
         }
+    }
 
-        function drawConnection(myPos, otherPos, direction, connectionColor, sphereColor) {
-            const mySphereRadius = 50;
-            // Draw my sphere first
-            drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
+    // --- INITIALIZATION ---
+    function init() {
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Initial setup of canvas and stars
 
-            ctx.strokeStyle = connectionColor;
-            ctx.lineWidth = 20;
-            ctx.lineCap = 'round';
-            
-            // Calculate where the connection should point to
-            const targetX = otherPos.x - myPos.x + otherPos.cx;
-            const targetY = otherPos.y - myPos.y + otherPos.cy;
-
-            // Draw the connecting line
-            ctx.beginPath();
-            ctx.moveTo(myPos.cx, myPos.cy);
-            ctx.lineTo(targetX, targetY);
-            ctx.stroke();
-
-            // Draw some "flow" particles
-            ctx.fillStyle = '#ffffff';
-            for(let i = 0; i < 5; i++) {
-                const progress = (Date.now() * 0.2 + i * 200) % 1000 / 1000;
-                const particleX = myPos.cx + (targetX - myPos.cx) * progress;
-                const particleY = myPos.cy + (targetY - myPos.cy) * progress;
-                ctx.beginPath();
-                ctx.arc(particleX, particleY, 3, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        // Open the other window and check if it was blocked
+        const newWindow = window.open('window2.html', 'PortalWindow2', 'width=400,height=400,left=600,top=200');
+        if (!newWindow) {
+            popupBlocked = true;
         }
 
-        // Start the animation loop
         animate();
-    </script>
+    }
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        stars = [];
+        if (canvas.width > 0 && canvas.height > 0) {
+            for (let i = 0; i < 200; i++) {
+                // FIX: Ensure z is always less than 3 to prevent negative radius
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    z: Math.random() * 2.5 + 0.5
+                });
+            }
+        }
+    }
+
+    // --- COMMUNICATION ---
+    const channel = new BroadcastChannel('portal_nexus_channel');
+    channel.onmessage = (event) => {
+        if (event.data && event.data.type === 'pos2') {
+            otherWindowPos = event.data.data;
+            lastSeenTimestamp = Date.now();
+        }
+    };
+
+    // --- MAIN ANIMATION LOOP ---
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawStarfield();
+
+        const myPos = getMyPosition();
+        channel.postMessage({ type: 'pos1', data: myPos });
+
+        const otherWindowPresent = Date.now() - lastSeenTimestamp < 1000;
+
+        if (!otherWindowPresent) {
+            if (popupBlocked) {
+                infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Pop-up Blocked`;
+                drawPopupBlockedMessage(myPos);
+            } else {
+                infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`;
+            }
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+            requestAnimationFrame(animate);
+            return;
+        }
+
+        const { dist } = calculateDistance(myPos, otherWindowPos);
+
+        if (mergeState.active) {
+            runMergeAnimation(myPos);
+        } else if (dist < MERGE_DISTANCE) {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: MERGE IMMINENT`;
+            startMerge(myPos);
+        } else if (dist < ATTRACTION_RADIUS) {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Filaments Active`;
+            updateAndDrawFilaments(myPos, otherWindowPos, dist);
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+        } else {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Stable`;
+            drawCore(myPos.cx, myPos.cy, CORE_COLOR);
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    // --- DRAWING & LOGIC FUNCTIONS ---
+    function drawStarfield() {
+        if (canvas.width === 0 || canvas.height === 0) return;
+
+        ctx.fillStyle = '#FFF';
+        stars.forEach(star => {
+            const x = (star.x - window.screenX / (star.z * 5)) % canvas.width;
+            const y = (star.y - window.screenY / (star.z * 5)) % canvas.height;
+            const size = (3 - star.z) * 0.5;
+            ctx.globalAlpha = 1 / star.z * 0.5;
+            ctx.beginPath();
+            ctx.arc(x < 0 ? x + canvas.width : x, y < 0 ? y + canvas.height : y, size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    function drawPopupBlockedMessage(myPos) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.font = '16px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText('Pop-up was blocked.', myPos.cx, myPos.cy - 10);
+        ctx.fillText('Please open "window2.html" manually.', myPos.cx, myPos.cy + 10);
+    }
+
+    function drawCore(x, y, color) {
+        const baseRadius = 40;
+        const pulse = Math.sin(Date.now() * 0.002) * 5;
+        const radius = baseRadius + pulse;
+
+        const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
+        grad.addColorStop(0, `${color}80`);
+        grad.addColorStop(1, `${color}00`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(x - radius * 2, y - radius * 2, radius * 4, radius * 4);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function updateAndDrawFilaments(myPos, otherPos, dist) {
+        const attractorX = otherPos.x - myPos.x + otherPos.cx;
+        const attractorY = otherPos.y - myPos.y + otherPos.cy;
+        const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
+
+        if (particles.length < PARTICLE_COUNT) {
+            particles.push(new Particle(myPos.cx, myPos.cy));
+        }
+
+        particles.forEach((p, index) => {
+            p.update(attractorX, attractorY, attractionForce * 0.5);
+            p.draw();
+            if (p.life <= 0) {
+                particles.splice(index, 1);
+            }
+        });
+    }
+
+    function startMerge(myPos) {
+        mergeState.active = true;
+        mergeState.progress = 0;
+        mergeState.maxRadius = Math.max(myPos.width, myPos.height) * 1.5;
+    }
+
+    function runMergeAnimation(myPos) {
+        infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: MERGED`;
+        mergeState.progress += 0.01;
+
+        if (mergeState.progress > 1) {
+            mergeState.progress = 1;
+        }
+
+        const easeOut = 1 - Math.pow(1 - mergeState.progress, 3);
+
+        const shockwaveRadius = easeOut * mergeState.maxRadius;
+        ctx.strokeStyle = `${MERGED_COLOR}${Math.round((1-easeOut) * 255).toString(16).padStart(2, '0')}`;
+        ctx.lineWidth = 5 * (1 - easeOut);
+        ctx.beginPath();
+        ctx.arc(myPos.cx, myPos.cy, shockwaveRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        drawCore(myPos.cx, myPos.cy, MERGED_COLOR);
+    }
+
+    // --- HELPERS ---
+    function getMyPosition() {
+        return {
+            x: window.screenX, y: window.screenY,
+            width: window.outerWidth, height: window.outerHeight,
+            cx: window.innerWidth / 2, cy: window.innerHeight / 2
+        };
+    }
+
+    function calculateDistance(pos1, pos2) {
+        const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
+        const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
+        return { dist: Math.sqrt(dx * dx + dy * dy), dx, dy };
+    }
+
+    init();
+</script>
 </body>
 </html>
