@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Window 2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center h-screen">
+
+    <div class="absolute top-5 left-5 bg-gray-800 bg-opacity-70 p-3 rounded-lg text-sm z-10">
+        <p class="font-bold">Window 2 (Secondary)</p>
+        <p>Drag me around!</p>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // --- Setup ---
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let openerWindowPos = null;
+        let openerWindowPresent = false;
+        let lastSeenTimestamp = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- Window Communication (Using BroadcastChannel) ---
+        const channel = new BroadcastChannel('portal_channel');
+
+        // Listen for messages on the channel
+        channel.onmessage = (event) => {
+            // We only care about messages from the other window
+            if (event.data && event.data.type === 'pos1') {
+                openerWindowPos = event.data.data;
+                openerWindowPresent = true;
+                lastSeenTimestamp = Date.now();
+            }
+        };
+
+        // --- Drawing and Animation Loop ---
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const myPos = {
+                x: window.screenX,
+                y: window.screenY,
+                width: window.outerWidth,
+                height: window.outerHeight,
+                cx: window.innerWidth / 2,
+                cy: window.innerHeight / 2
+            };
+
+            const mySphereRadius = 50;
+            const sphereColor = '#059669'; // Emerald
+
+            // Broadcast my position to any listening windows
+            channel.postMessage({ type: 'pos2', data: myPos });
+
+            // Check if we haven't heard from the other window in a while
+            if (Date.now() - lastSeenTimestamp > 1000) {
+                openerWindowPresent = false;
+            }
+
+            if (!openerWindowPresent) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.font = '16px Inter';
+                ctx.textAlign = 'center';
+                ctx.fillText('Waiting for the main window...', myPos.cx, myPos.cy);
+                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor); // Still draw my own sphere
+                requestAnimationFrame(animate);
+                return;
+            }
+            
+            // --- Interaction Logic ---
+            let shouldDrawSphere = true;
+            if (openerWindowPos) {
+                const dist_x = (myPos.x + myPos.width / 2) - (openerWindowPos.x + openerWindowPos.width / 2);
+                const dist_y = (myPos.y + myPos.height / 2) - (openerWindowPos.y + openerWindowPos.height / 2);
+                const centerDistance = Math.sqrt(dist_x * dist_x + dist_y * dist_y);
+
+                // If windows are merged, hide this sphere. Window 1 draws the big one.
+                if (centerDistance < 75) {
+                    shouldDrawSphere = false;
+                }
+            }
+            
+            if (shouldDrawSphere) {
+                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        function drawSphere(x, y, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Start the animation loop
+        animate();
+    </script>
+</body>
+</html>

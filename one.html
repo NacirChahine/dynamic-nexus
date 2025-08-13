@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Window 1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center h-screen">
+
+    <div class="absolute top-5 left-5 bg-gray-800 bg-opacity-70 p-3 rounded-lg text-sm z-10">
+        <p class="font-bold">Window 1 (Primary)</p>
+        <p>Drag this window next to Window 2.</p>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // --- Setup ---
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let otherWindowPos = null;
+        let otherWindowPresent = false;
+        let lastSeenTimestamp = 0;
+
+        // Set canvas to full window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- Window Communication (Using BroadcastChannel) ---
+        const channel = new BroadcastChannel('portal_channel');
+
+        // Open the second window (optional, user can open manually)
+        window.open('window2.html', 'PortalWindow2', 'width=400,height=400,left=600,top=200');
+
+        // Listen for messages on the channel
+        channel.onmessage = (event) => {
+            // We only care about messages from the other window
+            if (event.data && event.data.type === 'pos2') {
+                otherWindowPos = event.data.data;
+                otherWindowPresent = true;
+                lastSeenTimestamp = Date.now(); // Record when we last heard from the other window
+            }
+        };
+
+        // --- Drawing and Animation Loop ---
+        function animate() {
+            // Clear the canvas on each frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Get current window's position on the screen
+            const myPos = {
+                x: window.screenX,
+                y: window.screenY,
+                width: window.outerWidth,
+                height: window.outerHeight,
+                cx: window.innerWidth / 2, // center x of the canvas
+                cy: window.innerHeight / 2 // center y of the canvas
+            };
+            
+            // Sphere properties
+            const mySphereRadius = 50;
+            const sphereColor = '#4f46e5'; // Indigo
+            const connectionColor = '#10b981'; // Emerald
+            const mergedColor = '#db2777'; // Fuchsia
+
+            // Broadcast my position to any listening windows
+            channel.postMessage({ type: 'pos1', data: myPos });
+
+            // Check if we haven't heard from the other window in a while
+            if (Date.now() - lastSeenTimestamp > 1000) { // 1 second timeout
+                otherWindowPresent = false;
+            }
+
+            if (!otherWindowPresent) {
+                // If the other window is closed, just draw a message
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.font = '16px Inter';
+                ctx.textAlign = 'center';
+                ctx.fillText('Waiting for the other window...', myPos.cx, myPos.cy);
+                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor); // Still draw my own sphere
+                requestAnimationFrame(animate);
+                return;
+            }
+
+            // --- Interaction Logic ---
+            if (otherWindowPos) {
+                // Calculate the distance between the centers of the two windows
+                const dist_x = (myPos.x + myPos.width / 2) - (otherWindowPos.x + otherWindowPos.width / 2);
+                const dist_y = (myPos.y + myPos.height / 2) - (otherWindowPos.y + otherWindowPos.height / 2);
+                const centerDistance = Math.sqrt(dist_x * dist_x + dist_y * dist_y);
+
+                // Calculate horizontal and vertical adjacency
+                const horizontalAdjacency = myPos.x + myPos.width;
+                const verticalAdjacency = myPos.y + myPos.height;
+                const adjacencyThreshold = 25; // How close they need to be to connect
+
+                // State 1: Merged
+                if (centerDistance < 75) {
+                    ctx.fillStyle = mergedColor;
+                    ctx.beginPath();
+                    // Draw a larger, pulsing "merged" sphere
+                    const mergedRadius = mySphereRadius + 25 + Math.sin(Date.now() * 0.005) * 5;
+                    ctx.arc(myPos.cx, myPos.cy, mergedRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                
+                // State 2: Connected Horizontally
+                } else if (Math.abs(horizontalAdjacency - otherWindowPos.x) < adjacencyThreshold) {
+                     drawConnection(myPos, otherWindowPos, 'horizontal', connectionColor, sphereColor);
+
+                // State 3: Connected Vertically
+                } else if (Math.abs(verticalAdjacency - otherWindowPos.y) < adjacencyThreshold) {
+                    drawConnection(myPos, otherWindowPos, 'vertical', connectionColor, sphereColor);
+
+                // State 4: Separate
+                } else {
+                    drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
+                }
+
+            } else {
+                // Default state if we haven't received data yet
+                drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
+            }
+
+            // Loop forever
+            requestAnimationFrame(animate);
+        }
+
+        // --- Helper Drawing Functions ---
+        function drawSphere(x, y, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawConnection(myPos, otherPos, direction, connectionColor, sphereColor) {
+            const mySphereRadius = 50;
+            // Draw my sphere first
+            drawSphere(myPos.cx, myPos.cy, mySphereRadius, sphereColor);
+
+            ctx.strokeStyle = connectionColor;
+            ctx.lineWidth = 20;
+            ctx.lineCap = 'round';
+            
+            // Calculate where the connection should point to
+            const targetX = otherPos.x - myPos.x + otherPos.cx;
+            const targetY = otherPos.y - myPos.y + otherPos.cy;
+
+            // Draw the connecting line
+            ctx.beginPath();
+            ctx.moveTo(myPos.cx, myPos.cy);
+            ctx.lineTo(targetX, targetY);
+            ctx.stroke();
+
+            // Draw some "flow" particles
+            ctx.fillStyle = '#ffffff';
+            for(let i = 0; i < 5; i++) {
+                const progress = (Date.now() * 0.2 + i * 200) % 1000 / 1000;
+                const particleX = myPos.cx + (targetX - myPos.cx) * progress;
+                const particleY = myPos.cy + (targetY - myPos.cy) * progress;
+                ctx.beginPath();
+                ctx.arc(particleX, particleY, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Start the animation loop
+        animate();
+    </script>
+</body>
+</html>
