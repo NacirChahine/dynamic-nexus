@@ -43,12 +43,15 @@
 
 <script>
     // --- ADVANCED CONFIGURATION ---
+    const WINDOW_ID = 2;
     const ATTRACTION_RADIUS = 800;
     const MERGE_DISTANCE = 100;
-    const PARTICLE_COUNT = 75; // Per window
+    const PARTICLE_COUNT = 75;
     const PARTICLE_LIFESPAN = 100;
     const CORE_COLOR = '#16a34a'; // Green
     const PARTICLE_COLOR = 'rgba(34, 197, 94, 0.8)';
+    const MERGED_COLOR = '#a855f7'; // Purple
+    const MERGED_PARTICLE_COLOR = 'rgba(168, 85, 247, 0.8)';
 
     // --- SETUP ---
     const canvas = document.getElementById('canvas');
@@ -60,60 +63,42 @@
     let particles = [];
     let transferredParticles = [];
     let stars = [];
+    let activeWindowId = 1;
 
     // --- PARTICLE CLASS ---
     class Particle {
         constructor({x, y, vx = (Math.random() - 0.5) * 2, vy = (Math.random() - 0.5) * 2, life = Math.random() * PARTICLE_LIFESPAN, color}) {
-            this.x = x;
-            this.y = y;
-            this.vx = vx;
-            this.vy = vy;
-            this.life = life;
-            this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+            this.life = life; this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
             this.color = color;
         }
-
         update(attractorX, attractorY, attractionForce) {
-            const dx = attractorX - this.x;
-            const dy = attractorY - this.y;
+            const dx = attractorX - this.x; const dy = attractorY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist > 1) {
-                this.vx += (dx / dist) * attractionForce;
-                this.vy += (dy / dist) * attractionForce;
-            }
-
-            this.x += this.vx;
-            this.y += this.vy;
-            this.vx *= 0.97;
-            this.vy *= 0.97;
-            this.life--;
+            if (dist > 1) { this.vx += (dx / dist) * attractionForce; this.vy += (dy / dist) * attractionForce; }
+            this.x += this.vx; this.y += this.vy;
+            this.vx *= 0.97; this.vy *= 0.97; this.life--;
         }
-
         draw() {
             const alpha = (this.life / this.baseLife) * 0.8;
             ctx.fillStyle = this.color.replace(/[\d\.]+\)$/g, `${alpha})`);
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2); ctx.fill();
         }
     }
 
     // --- INITIALIZATION ---
     function init() {
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('focus', () => channel.postMessage({ type: 'focus', id: WINDOW_ID }));
         resizeCanvas();
         animate();
     }
 
     function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         stars = [];
         if (canvas.width > 0 && canvas.height > 0) {
-            for (let i = 0; i < 200; i++) {
-                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
-            }
+            for (let i = 0; i < 200; i++) stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
         }
     }
 
@@ -121,11 +106,17 @@
     const channel = new BroadcastChannel('portal_nexus_channel');
     channel.onmessage = (event) => {
         if (!event.data) return;
-        if (event.data.type === 'pos1') {
-            openerWindowPos = event.data.data;
-            lastSeenTimestamp = Date.now();
-        } else if (event.data.type === 'particle_transfer' && event.data.target === 2) {
-            transferredParticles.push(new Particle(event.data.particle));
+        switch(event.data.type) {
+            case 'pos1':
+                openerWindowPos = event.data.data;
+                lastSeenTimestamp = Date.now();
+                break;
+            case 'particle_transfer':
+                if (event.data.target === WINDOW_ID) transferredParticles.push(new Particle(event.data.particle));
+                break;
+            case 'focus':
+                activeWindowId = event.data.id;
+                break;
         }
     };
 
@@ -149,8 +140,9 @@
         const { dist } = calculateDistance(myPos, openerWindowPos);
 
         if (dist < MERGE_DISTANCE) {
-            infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: MERGED`;
-            // This window goes blank during merge; Window 1 handles the visuals.
+            const isTopWindow = activeWindowId === WINDOW_ID;
+            infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: MERGED (${isTopWindow ? 'Top' : 'Bottom'})`;
+            drawMergedState(myPos, isTopWindow);
         } else if (dist < ATTRACTION_RADIUS) {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Filaments Active`;
             updateAndDrawFilaments(myPos, openerWindowPos, dist);
@@ -164,15 +156,23 @@
     }
 
     // --- DRAWING & LOGIC FUNCTIONS ---
+    function drawMergedState(myPos, isTop) {
+        const coreRadius = isTop ? 60 : 55;
+        drawCore(myPos.cx, myPos.cy, MERGED_COLOR, coreRadius, isTop ? 1.0 : 0.7);
+
+        if (particles.length < PARTICLE_COUNT) {
+            particles.push(new Particle({x: myPos.cx, y: myPos.cy, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, color: MERGED_PARTICLE_COLOR}));
+        }
+        updateParticleList(particles, myPos, openerWindowPos, myPos.cx, myPos.cy, -0.02, 1);
+    }
+
     function updateAndDrawFilaments(myPos, otherPos, dist) {
         if (particles.length < PARTICLE_COUNT) {
             particles.push(new Particle({x: myPos.cx, y: myPos.cy, color: PARTICLE_COLOR}));
         }
-
         const attractorX = otherPos.x - myPos.x + otherPos.cx;
         const attractorY = otherPos.y - myPos.y + otherPos.cy;
         const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
-
         updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
         updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
     }
@@ -181,23 +181,10 @@
         for (let i = list.length - 1; i >= 0; i--) {
             const p = list[i];
             p.update(attractorX, attractorY, attractionForce * 0.5);
-
-            const screenX = myPos.x + p.x;
-            const screenY = myPos.y + p.y;
+            const screenX = myPos.x + p.x; const screenY = myPos.y + p.y;
 
             if (otherPos && screenX >= otherPos.x && screenX <= otherPos.x + otherPos.width && screenY >= otherPos.y && screenY <= otherPos.y + otherPos.height) {
-                channel.postMessage({
-                    type: 'particle_transfer',
-                    target: targetId,
-                    particle: {
-                        x: screenX - otherPos.x,
-                        y: screenY - otherPos.y,
-                        vx: p.vx,
-                        vy: p.vy,
-                        life: p.life,
-                        color: p.color
-                    }
-                });
+                channel.postMessage({ type: 'particle_transfer', target: targetId, particle: { x: screenX - otherPos.x, y: screenY - otherPos.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color } });
                 list.splice(i, 1);
                 continue;
             }
@@ -215,37 +202,27 @@
             const y = (star.y - window.screenY / (star.z * 5)) % canvas.height;
             const size = (3 - star.z) * 0.5;
             ctx.globalAlpha = 1 / star.z * 0.5;
-            ctx.beginPath();
-            ctx.arc(x < 0 ? x + canvas.width : x, y < 0 ? y + canvas.height : y, size, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(x < 0 ? x + canvas.width : x, y < 0 ? y + canvas.height : y, size, 0, Math.PI * 2); ctx.fill();
         });
         ctx.globalAlpha = 1;
     }
 
-    function drawCore(x, y, color, baseRadius) {
+    function drawCore(x, y, color, baseRadius, opacity = 1.0) {
+        ctx.globalAlpha = opacity;
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
         const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
-        grad.addColorStop(0, `${color}80`);
-        grad.addColorStop(1, `${color}00`);
+        grad.addColorStop(0, `${color}80`); grad.addColorStop(1, `${color}00`);
         ctx.fillStyle = grad;
         ctx.fillRect(x - radius * 2, y - radius * 2, radius * 4, radius * 4);
         ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1.0;
     }
 
     // --- HELPERS ---
-    function getMyPosition() {
-        return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
-    }
-
-    function calculateDistance(pos1, pos2) {
-        const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
-        const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
-        return { dist: Math.sqrt(dx * dx + dy * dy) };
-    }
+    function getMyPosition() { return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 }; }
+    function calculateDistance(pos1, pos2) { const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2); const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2); return { dist: Math.sqrt(dx * dx + dy * dy) }; }
 
     init();
 </script>
