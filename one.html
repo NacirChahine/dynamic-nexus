@@ -44,14 +44,14 @@
 <script>
     // --- ADVANCED CONFIGURATION ---
     const WINDOW_ID = 1;
-    const ATTRACTION_RADIUS = 800;
+    const ATTRACTION_RADIUS = 900;
     const MERGE_DISTANCE = 100;
-    const PARTICLE_COUNT = 75;
-    const PARTICLE_LIFESPAN = 100;
+    const PARTICLE_COUNT = 80;
+    const PARTICLE_LIFESPAN = 120;
     const CORE_COLOR = '#3b82f6'; // Blue
-    const PARTICLE_COLOR = 'rgba(59, 130, 246, 0.8)';
+    const PARTICLE_COLOR = 'rgba(96, 165, 250, 0.9)'; // Lighter Blue
     const MERGED_COLOR = '#a855f7'; // Purple
-    const MERGED_PARTICLE_COLOR = 'rgba(168, 85, 247, 0.8)';
+    const MERGED_PARTICLE_COLOR = 'rgba(192, 132, 252, 0.9)'; // Lighter Purple
 
     // --- SETUP ---
     const canvas = document.getElementById('canvas');
@@ -63,8 +63,9 @@
     let particles = [];
     let transferredParticles = [];
     let stars = [];
+    let nebulaColors = [];
     let popupBlocked = false;
-    let activeWindowId = 1; // Assume this window is active by default
+    let activeWindowId = 1;
 
     // --- PARTICLE CLASS ---
     class Particle {
@@ -72,9 +73,13 @@
             this.x = x; this.y = y; this.vx = vx; this.vy = vy;
             this.life = life; this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
             this.color = color;
+            this.history = [];
         }
 
         update(attractorX, attractorY, attractionForce) {
+            this.history.push({x: this.x, y: this.y});
+            if (this.history.length > 5) this.history.shift();
+
             const dx = attractorX - this.x; const dy = attractorY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 1) { this.vx += (dx / dist) * attractionForce; this.vy += (dy / dist) * attractionForce; }
@@ -83,7 +88,19 @@
         }
 
         draw() {
-            const alpha = (this.life / this.baseLife) * 0.8;
+            // Draw trail
+            ctx.beginPath();
+            ctx.moveTo(this.history[0]?.x || this.x, this.history[0]?.y || this.y);
+            for (let i = 1; i < this.history.length; i++) {
+                ctx.lineTo(this.history[i].x, this.history[i].y);
+            }
+            const trailAlpha = (this.life / this.baseLife) * 0.2;
+            ctx.strokeStyle = this.color.replace(/[\d\.]+\)$/g, `${trailAlpha})`);
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Draw head
+            const alpha = (this.life / this.baseLife) * 0.9;
             ctx.fillStyle = this.color.replace(/[\d\.]+\)$/g, `${alpha})`);
             ctx.beginPath(); ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2); ctx.fill();
         }
@@ -102,6 +119,10 @@
     function resizeCanvas() {
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         stars = [];
+        nebulaColors = [
+            { x: Math.random() * canvas.width, y: Math.random() * canvas.height, r: Math.random() * 400 + 200, color: 'rgba(59, 130, 246, 0.1)' },
+            { x: Math.random() * canvas.width, y: Math.random() * canvas.height, r: Math.random() * 300 + 150, color: 'rgba(168, 85, 247, 0.05)' }
+        ];
         if (canvas.width > 0 && canvas.height > 0) {
             for (let i = 0; i < 200; i++) stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
         }
@@ -113,22 +134,18 @@
         if (!event.data) return;
         switch(event.data.type) {
             case 'pos2':
-                otherWindowPos = event.data.data;
-                lastSeenTimestamp = Date.now();
-                break;
+                otherWindowPos = event.data.data; lastSeenTimestamp = Date.now(); break;
             case 'particle_transfer':
-                if (event.data.target === WINDOW_ID) transferredParticles.push(new Particle(event.data.particle));
-                break;
+                if (event.data.target === WINDOW_ID) transferredParticles.push(new Particle(event.data.particle)); break;
             case 'focus':
-                activeWindowId = event.data.id;
-                break;
+                activeWindowId = event.data.id; break;
         }
     };
 
     // --- MAIN ANIMATION LOOP ---
     function animate() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawStarfield();
+        drawBackground();
 
         const myPos = getMyPosition();
         channel.postMessage({ type: 'pos1', data: myPos });
@@ -161,21 +178,24 @@
 
     // --- DRAWING & LOGIC FUNCTIONS ---
     function drawMergedState(myPos, isTop) {
-        // Both windows draw a core, but the top one is larger and more prominent.
         const coreRadius = isTop ? 60 : 55;
         drawCore(myPos.cx, myPos.cy, MERGED_COLOR, coreRadius, isTop ? 1.0 : 0.7);
-
-        // Both windows manage a shared pool of merged particles
         if (particles.length < PARTICLE_COUNT) {
             particles.push(new Particle({x: myPos.cx, y: myPos.cy, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, color: MERGED_PARTICLE_COLOR}));
         }
-        // Update particles without an attractor (radiate outwards)
         updateParticleList(particles, myPos, otherWindowPos, myPos.cx, myPos.cy, -0.02, 2);
     }
 
     function updateAndDrawFilaments(myPos, otherPos, dist) {
+        const coreRadius = 40;
+        const dx = (otherPos.x + otherPos.cx) - (myPos.x + myPos.cx);
+        const dy = (otherPos.y + otherPos.cy) - (myPos.y + myPos.cy);
+        const angle = Math.atan2(dy, dx);
+        const spawnX = myPos.cx + Math.cos(angle) * coreRadius;
+        const spawnY = myPos.cy + Math.sin(angle) * coreRadius;
+
         if (particles.length < PARTICLE_COUNT) {
-            particles.push(new Particle({x: myPos.cx, y: myPos.cy, color: PARTICLE_COLOR}));
+            particles.push(new Particle({x: spawnX, y: spawnY, color: PARTICLE_COLOR}));
         }
         const attractorX = otherPos.x - myPos.x + otherPos.cx;
         const attractorY = otherPos.y - myPos.y + otherPos.cy;
@@ -201,8 +221,17 @@
         }
     }
 
-    function drawStarfield() {
+    function drawBackground() {
         if (canvas.width === 0 || canvas.height === 0) return;
+        // Nebula
+        nebulaColors.forEach(neb => {
+            const grad = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
+            grad.addColorStop(0, neb.color);
+            grad.addColorStop(1, 'rgba(0,0,5,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0, canvas.width, canvas.height);
+        });
+        // Stars
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
             const x = (star.x - window.screenX / (star.z * 5)) % canvas.width;
@@ -218,10 +247,16 @@
         ctx.globalAlpha = opacity;
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
-        const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
-        grad.addColorStop(0, `${color}80`); grad.addColorStop(1, `${color}00`);
-        ctx.fillStyle = grad;
-        ctx.fillRect(x - radius * 2, y - radius * 2, radius * 4, radius * 4);
+        // Bloom effect
+        for (let i = 4; i > 0; i--) {
+            const bloomRadius = radius + i * 10;
+            const grad = ctx.createRadialGradient(x, y, radius, x, y, bloomRadius);
+            grad.addColorStop(0, color + '20');
+            grad.addColorStop(1, color + '00');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(x, y, bloomRadius, 0, Math.PI * 2); ctx.fill();
+        }
+        // Core
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1.0;
