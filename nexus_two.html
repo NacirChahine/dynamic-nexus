@@ -63,11 +63,13 @@
     let lastSeenTimestamp = 0;
     let particles = [];
     let transferredParticles = [];
+    let ghostParticles = [];
     let stars = [];
     let nebulaColors = [];
     let activeWindowId = 1;
     let ringAngle1 = 0;
     let ringAngle2 = 0;
+    let partnerFound = false;
 
     // --- PARTICLE CLASS ---
     class Particle {
@@ -75,12 +77,8 @@
             this.x = x; this.y = y; this.vx = vx; this.vy = vy;
             this.life = life; this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
             this.color = color;
-            this.history = [];
         }
         update(attractorX, attractorY, attractionForce) {
-            this.history.push({x: this.x, y: this.y});
-            if (this.history.length > 5) this.history.shift();
-
             const dx = attractorX - this.x; const dy = attractorY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 1) { this.vx += (dx / dist) * attractionForce; this.vy += (dy / dist) * attractionForce; }
@@ -92,18 +90,18 @@
             if (blendColor && blendAmount > 0) {
                 finalColor = lerpColor(this.color, blendColor, blendAmount);
             }
+            const pulse = Math.sin((this.life / this.baseLife) * Math.PI * 4) * 0.5 + 0.5;
+            const alpha = (this.life / this.baseLife) * 0.7 * pulse;
 
-            ctx.beginPath();
-            ctx.moveTo(this.history[0]?.x || this.x, this.history[0]?.y || this.y);
-            for (let i = 1; i < this.history.length; i++) ctx.lineTo(this.history[i].x, this.history[i].y);
-            const trailAlpha = (this.life / this.baseLife) * 0.2;
-            ctx.strokeStyle = finalColor.replace(/[\d\.]+\)$/g, `${trailAlpha})`);
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-
-            const alpha = (this.life / this.baseLife) * 0.9;
             ctx.fillStyle = finalColor.replace(/[\d\.]+\)$/g, `${alpha})`);
-            ctx.beginPath(); ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = finalColor.replace(/[\d\.]+\)$/g, `${alpha * 0.5})`);
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+            ctx.fill();
         }
     }
 
@@ -112,6 +110,15 @@
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('focus', () => channel.postMessage({ type: 'focus', id: WINDOW_ID }));
         resizeCanvas();
+
+        // Check for partner window and open if not found
+        channel.postMessage({ type: 'ping', id: WINDOW_ID });
+        setTimeout(() => {
+            if (!partnerFound) {
+                window.open('nexus_one.html', 'PortalWindow1', 'width=400,height=400,left=100,top=200');
+            }
+        }, 250);
+
         animate();
     }
 
@@ -136,8 +143,17 @@
                 openerWindowPos = event.data.data; lastSeenTimestamp = Date.now(); break;
             case 'particle_transfer':
                 if (event.data.target === WINDOW_ID) transferredParticles.push(new Particle(event.data.particle)); break;
+            case 'ghost_particle':
+                if (event.data.target === WINDOW_ID) ghostParticles.push(event.data.particle); break;
             case 'focus':
                 activeWindowId = event.data.id; break;
+            case 'ping':
+            case 'pong':
+                if (event.data.id !== WINDOW_ID) {
+                    partnerFound = true;
+                    channel.postMessage({ type: 'pong', id: WINDOW_ID });
+                }
+                break;
         }
     };
 
@@ -175,6 +191,9 @@
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Stable`;
             drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
         }
+
+        ghostParticles.forEach(p => new Particle(p).draw());
+        ghostParticles = [];
 
         requestAnimationFrame(animate);
     }
@@ -225,6 +244,11 @@
                 channel.postMessage({ type: 'particle_transfer', target: targetId, particle: { x: screenX - otherPos.x, y: screenY - otherPos.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color } });
                 list.splice(i, 1);
                 continue;
+            }
+
+            const ghostThreshold = 50;
+            if (otherPos && (p.x > myPos.cx + myPos.width/2 - ghostThreshold || p.x < ghostThreshold || p.y > myPos.cy + myPos.height/2 - ghostThreshold || p.y < ghostThreshold)) {
+                channel.postMessage({ type: 'ghost_particle', target: targetId, particle: { x: screenX - otherPos.x, y: screenY - otherPos.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color } });
             }
 
             p.draw(blendColor, blendAmount);
