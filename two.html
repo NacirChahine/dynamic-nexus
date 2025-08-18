@@ -65,6 +65,8 @@
     let stars = [];
     let nebulaColors = [];
     let activeWindowId = 1;
+    let ringAngle1 = 0;
+    let ringAngle2 = 0;
 
     // --- PARTICLE CLASS ---
     class Particle {
@@ -141,6 +143,9 @@
         const myPos = getMyPosition();
         channel.postMessage({ type: 'pos2', data: myPos });
 
+        ringAngle1 += 0.01;
+        ringAngle2 -= 0.005;
+
         const openerWindowPresent = Date.now() - lastSeenTimestamp < 1500;
 
         if (!openerWindowPresent) {
@@ -179,12 +184,15 @@
     }
 
     function updateAndDrawFilaments(myPos, otherPos, dist) {
-        const coreRadius = 40;
+        const baseRadius = 40;
+        const pulse = Math.sin(Date.now() * 0.002) * 5;
+        const currentCoreRadius = baseRadius + pulse;
+
         const dx = (otherPos.x + otherPos.cx) - (myPos.x + myPos.cx);
         const dy = (otherPos.y + otherPos.cy) - (myPos.y + myPos.cy);
         const angle = Math.atan2(dy, dx);
-        const spawnX = myPos.cx + Math.cos(angle) * coreRadius;
-        const spawnY = myPos.cy + Math.sin(angle) * coreRadius;
+        const spawnX = myPos.cx + Math.cos(angle) * currentCoreRadius;
+        const spawnY = myPos.cy + Math.sin(angle) * currentCoreRadius;
 
         if (particles.length < PARTICLE_COUNT) {
             particles.push(new Particle({x: spawnX, y: spawnY, color: PARTICLE_COLOR}));
@@ -217,10 +225,8 @@
         if (canvas.width === 0 || canvas.height === 0) return;
         nebulaColors.forEach(neb => {
             const grad = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-            grad.addColorStop(0, neb.color);
-            grad.addColorStop(1, 'rgba(0,0,5,0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0,0, canvas.width, canvas.height);
+            grad.addColorStop(0, neb.color); grad.addColorStop(1, 'rgba(0,0,5,0)');
+            ctx.fillStyle = grad; ctx.fillRect(0,0, canvas.width, canvas.height);
         });
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
@@ -237,11 +243,23 @@
         ctx.globalAlpha = opacity;
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
+
+        ctx.strokeStyle = color + '80';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = color + '40';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2);
+        ctx.stroke();
+
         for (let i = 4; i > 0; i--) {
             const bloomRadius = radius + i * 10;
             const grad = ctx.createRadialGradient(x, y, radius, x, y, bloomRadius);
-            grad.addColorStop(0, color + '20');
-            grad.addColorStop(1, color + '00');
+            grad.addColorStop(0, color + '20'); grad.addColorStop(1, color + '00');
             ctx.fillStyle = grad;
             ctx.beginPath(); ctx.arc(x, y, bloomRadius, 0, Math.PI * 2); ctx.fill();
         }
