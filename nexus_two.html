@@ -50,6 +50,7 @@
     const PARTICLE_LIFESPAN = 120;
     const CORE_COLOR = '#16a34a'; // Green
     const PARTICLE_COLOR = 'rgba(74, 222, 128, 0.9)'; // Lighter Green
+    const HOT_PARTICLE_COLOR = 'rgba(236, 72, 153, 0.9)'; // Magenta
     const MERGED_COLOR = '#a855f7'; // Purple
     const MERGED_PARTICLE_COLOR = 'rgba(192, 132, 252, 0.9)';
 
@@ -86,17 +87,22 @@
             this.x += this.vx; this.y += this.vy;
             this.vx *= 0.97; this.vy *= 0.97; this.life--;
         }
-        draw() {
+        draw(blendColor = null, blendAmount = 0) {
+            let finalColor = this.color;
+            if (blendColor && blendAmount > 0) {
+                finalColor = lerpColor(this.color, blendColor, blendAmount);
+            }
+
             ctx.beginPath();
             ctx.moveTo(this.history[0]?.x || this.x, this.history[0]?.y || this.y);
             for (let i = 1; i < this.history.length; i++) ctx.lineTo(this.history[i].x, this.history[i].y);
             const trailAlpha = (this.life / this.baseLife) * 0.2;
-            ctx.strokeStyle = this.color.replace(/[\d\.]+\)$/g, `${trailAlpha})`);
+            ctx.strokeStyle = finalColor.replace(/[\d\.]+\)$/g, `${trailAlpha})`);
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
             const alpha = (this.life / this.baseLife) * 0.9;
-            ctx.fillStyle = this.color.replace(/[\d\.]+\)$/g, `${alpha})`);
+            ctx.fillStyle = finalColor.replace(/[\d\.]+\)$/g, `${alpha})`);
             ctx.beginPath(); ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2); ctx.fill();
         }
     }
@@ -195,16 +201,21 @@
         const spawnY = myPos.cy + Math.sin(angle) * currentCoreRadius;
 
         if (particles.length < PARTICLE_COUNT) {
-            particles.push(new Particle({x: spawnX, y: spawnY, color: PARTICLE_COLOR}));
+            const initialSpeed = 2;
+            const initialVx = Math.cos(angle) * initialSpeed;
+            const initialVy = Math.sin(angle) * initialSpeed;
+            particles.push(new Particle({x: spawnX, y: spawnY, vx: initialVx, vy: initialVy, color: PARTICLE_COLOR}));
         }
         const attractorX = otherPos.x - myPos.x + otherPos.cx;
         const attractorY = otherPos.y - myPos.y + otherPos.cy;
         const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
-        updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
-        updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1);
+        const blendAmount = Math.max(0, 1 - (dist - MERGE_DISTANCE) / (ATTRACTION_RADIUS / 2 - MERGE_DISTANCE));
+
+        updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
+        updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
     }
 
-    function updateParticleList(list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId) {
+    function updateParticleList(list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId, blendColor, blendAmount) {
         for (let i = list.length - 1; i >= 0; i--) {
             const p = list[i];
             p.update(attractorX, attractorY, attractionForce * 0.5);
@@ -216,7 +227,7 @@
                 continue;
             }
 
-            p.draw();
+            p.draw(blendColor, blendAmount);
             if (p.life <= 0) list.splice(i, 1);
         }
     }
@@ -244,33 +255,32 @@
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
 
-        ctx.strokeStyle = color + '80';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = color + '40';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.strokeStyle = color + '80'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = color + '40'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2); ctx.stroke();
 
         for (let i = 4; i > 0; i--) {
             const bloomRadius = radius + i * 10;
             const grad = ctx.createRadialGradient(x, y, radius, x, y, bloomRadius);
             grad.addColorStop(0, color + '20'); grad.addColorStop(1, color + '00');
-            ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(x, y, bloomRadius, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, bloomRadius, 0, Math.PI * 2); ctx.fill();
         }
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1.0;
     }
 
     // --- HELPERS ---
     function getMyPosition() { return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 }; }
     function calculateDistance(pos1, pos2) { const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2); const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2); return { dist: Math.sqrt(dx * dx + dy * dy) }; }
+    function lerpColor(color1, color2, amount) {
+        const c1 = color1.match(/\d+/g).map(Number);
+        const c2 = color2.match(/\d+/g).map(Number);
+        const r = Math.round(c1[0] + (c2[0] - c1[0]) * amount);
+        const g = Math.round(c1[1] + (c2[1] - c1[1]) * amount);
+        const b = Math.round(c1[2] + (c2[2] - c1[2]) * amount);
+        return `rgba(${r}, ${g}, ${b}, 0.9)`;
+    }
 
     init();
 </script>
