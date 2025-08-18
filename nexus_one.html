@@ -62,12 +62,12 @@
 <button id="openWindowBtn" style="display: none;">Launch Nexus 2</button>
 
 <script>
-    // --- ADVANCED CONFIGURATION ---
+    // --- ENHANCED CONFIGURATION ---
     const WINDOW_ID = 1;
     const ATTRACTION_RADIUS = 900;
     const MERGE_DISTANCE = 100;
-    const PARTICLE_COUNT = 100;
-    const PARTICLE_LIFESPAN = 150;
+    const PARTICLE_COUNT = 120;
+    const PARTICLE_LIFESPAN = 180;
     const CORE_COLOR = '#3b82f6'; // Blue
     const PARTICLE_COLOR = 'rgba(96, 165, 250, 0.9)';
     const HOT_PARTICLE_COLOR = 'rgba(236, 72, 153, 0.9)'; // Magenta
@@ -93,47 +93,70 @@
     let ringAngle2 = 0;
     let partnerFound = false;
 
-    // --- PARTICLE CLASS ---
+    // --- ENHANCED PARTICLE CLASS WITH WAVY FILAMENTS ---
     class Particle {
-        constructor({x, y, vx = 0, vy = 0, life = Math.random() * PARTICLE_LIFESPAN, color}) {
+        constructor({x, y, vx = 0, vy = 0, life = Math.random() * PARTICLE_LIFESPAN, color, targetX, targetY}) {
             this.x = x; this.y = y; this.vx = vx; this.vy = vy;
             this.life = life; this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
             this.color = color;
             this.wavePhase = Math.random() * Math.PI * 2;
-            this.waveAmplitude = Math.random() * 8 + 2;
-            this.waveFreq = Math.random() * 0.05 + 0.05;
+            this.waveAmplitude = Math.random() * 15 + 5; // Increased amplitude
+            this.waveFreq = Math.random() * 0.1 + 0.1; // Increased frequency
+            this.targetX = targetX;
+            this.targetY = targetY;
+            this.pathAngle = targetX && targetY ? Math.atan2(targetY - y, targetX - x) : 0;
         }
 
         update(attractorX, attractorY, attractionForce) {
-            const dx = attractorX - this.x; const dy = attractorY - this.y;
+            const dx = attractorX - this.x;
+            const dy = attractorY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 1) { this.vx += (dx / dist) * attractionForce; this.vy += (dy / dist) * attractionForce; }
-            this.x += this.vx; this.y += this.vy;
-            this.vx *= 0.98; this.vy *= 0.98; this.life--;
+
+            if (dist > 1) {
+                this.vx += (dx / dist) * attractionForce;
+                this.vy += (dy / dist) * attractionForce;
+            }
+
+            // Update path angle for wave direction
+            if (this.targetX && this.targetY) {
+                this.pathAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
+            }
+
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vx *= 0.98;
+            this.vy *= 0.98;
+            this.life--;
         }
 
         draw(blendColor = null, blendAmount = 0) {
             let finalColor = this.color;
-            if (blendColor && blendAmount > 0) finalColor = lerpColor(this.color, blendColor, blendAmount);
+            if (blendColor && blendAmount > 0) {
+                finalColor = lerpColor(this.color, blendColor, blendAmount);
+            }
 
             const alpha = (this.life / this.baseLife) * 0.9;
+            const flicker = Math.random() * 0.2 + 0.8;
+
+            // Enhanced wave effect with directional waves
             const waveOffset = Math.sin(this.life * this.waveFreq + this.wavePhase) * this.waveAmplitude;
-            const velMag = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            const perpVx = -this.vy / velMag;
-            const perpVy = this.vx / velMag;
+            const perpX = -Math.sin(this.pathAngle);
+            const perpY = Math.cos(this.pathAngle);
 
-            const drawX = this.x + perpVx * waveOffset;
-            const drawY = this.y + perpVy * waveOffset;
+            const drawX = this.x + perpX * waveOffset;
+            const drawY = this.y + perpY * waveOffset;
 
-            const tailX = drawX - this.vx * 4;
-            const tailY = drawY - this.vy * 4;
+            const tailLength = 8 + (this.waveAmplitude/2);
+            const tailX = drawX - this.vx * tailLength;
+            const tailY = drawY - this.vy * tailLength;
 
             const grad = ctx.createLinearGradient(drawX, drawY, tailX, tailY);
-            grad.addColorStop(0, finalColor.replace(/[\d\.]+\)$/g, `${alpha})`));
+            grad.addColorStop(0, finalColor.replace(/[\d\.]+\)$/g, `${alpha * flicker})`));
             grad.addColorStop(1, finalColor.replace(/[\d\.]+\)$/g, `0)`));
 
             ctx.strokeStyle = grad;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2.5; // Slightly thicker lines
+            ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(drawX, drawY);
             ctx.lineTo(tailX, tailY);
@@ -164,14 +187,21 @@
     }
 
     function resizeCanvas() {
-        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
         stars = [];
         nebulaColors = [
             { x: Math.random() * canvas.width, y: Math.random() * canvas.height, r: Math.random() * 400 + 200, color: 'rgba(59, 130, 246, 0.1)' },
             { x: Math.random() * canvas.width, y: Math.random() * canvas.height, r: Math.random() * 300 + 150, color: 'rgba(168, 85, 247, 0.05)' }
         ];
         if (canvas.width > 0 && canvas.height > 0) {
-            for (let i = 0; i < 200; i++) stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, z: Math.random() * 2.5 + 0.5 });
+            for (let i = 0; i < 200; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    z: Math.random() * 2.5 + 0.5
+                });
+            }
         }
     }
 
@@ -181,13 +211,28 @@
         if (!event.data) return;
         switch(event.data.type) {
             case 'pos2':
-                otherWindowPos = event.data.data; lastSeenTimestamp = Date.now(); break;
+                otherWindowPos = event.data.data;
+                lastSeenTimestamp = Date.now();
+                break;
             case 'particle_transfer':
-                if (event.data.target === WINDOW_ID) transferredParticles.push(new Particle(event.data.particle)); break;
+                if (event.data.target === WINDOW_ID) {
+                    transferredParticles.push(
+                        new Particle({
+                            ...event.data.particle,
+                            targetX: window.innerWidth / 2,
+                            targetY: window.innerHeight / 2
+                        })
+                    );
+                }
+                break;
             case 'ghost_particle':
-                if (event.data.target === WINDOW_ID) ghostParticles.push(event.data.particle); break;
+                if (event.data.target === WINDOW_ID) {
+                    ghostParticles.push(event.data.particle);
+                }
+                break;
             case 'focus':
-                activeWindowId = event.data.id; break;
+                activeWindowId = event.data.id;
+                break;
             case 'ping':
             case 'pong':
                 if (event.data.id !== WINDOW_ID) {
@@ -244,7 +289,13 @@
         const coreRadius = isTop ? 60 : 55;
         drawCore(myPos.cx, myPos.cy, MERGED_COLOR, coreRadius, isTop ? 1.0 : 0.7);
         if (particles.length < PARTICLE_COUNT) {
-            particles.push(new Particle({x: myPos.cx, y: myPos.cy, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, color: MERGED_PARTICLE_COLOR}));
+            particles.push(new Particle({
+                x: myPos.cx,
+                y: myPos.cy,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                color: MERGED_PARTICLE_COLOR
+            }));
         }
         updateParticleList(particles, myPos, otherWindowPos, myPos.cx, myPos.cy, -0.02, 2);
     }
@@ -258,14 +309,24 @@
         const dy = (otherPos.y + otherPos.cy) - (myPos.y + myPos.cy);
         const angle = Math.atan2(dy, dx);
 
-        if (particles.length < PARTICLE_COUNT && Math.random() > 0.5) {
+        if (particles.length < PARTICLE_COUNT && Math.random() > 0.3) {
             const spawnX = myPos.cx + Math.cos(angle) * currentCoreRadius;
             const spawnY = myPos.cy + Math.sin(angle) * currentCoreRadius;
             const initialSpeed = 2.5;
             const initialVx = Math.cos(angle) * initialSpeed;
             const initialVy = Math.sin(angle) * initialSpeed;
-            particles.push(new Particle({x: spawnX, y: spawnY, vx: initialVx, vy: initialVy, color: PARTICLE_COLOR}));
+
+            particles.push(new Particle({
+                x: spawnX,
+                y: spawnY,
+                vx: initialVx,
+                vy: initialVy,
+                color: PARTICLE_COLOR,
+                targetX: otherPos.cx + (otherPos.x - myPos.x),
+                targetY: otherPos.cy + (otherPos.y - myPos.y)
+            }));
         }
+
         const attractorX = otherPos.x - myPos.x + otherPos.cx;
         const attractorY = otherPos.y - myPos.y + otherPos.cy;
         const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
@@ -279,17 +340,54 @@
         for (let i = list.length - 1; i >= 0; i--) {
             const p = list[i];
             p.update(attractorX, attractorY, attractionForce * 0.5);
-            const screenX = myPos.x + p.x; const screenY = myPos.y + p.y;
+            const screenX = myPos.x + p.x;
+            const screenY = myPos.y + p.y;
 
-            if (otherPos && screenX >= otherPos.x && screenX <= otherPos.x + otherPos.width && screenY >= otherPos.y && screenY <= otherPos.y + otherPos.height) {
-                channel.postMessage({ type: 'particle_transfer', target: targetId, particle: { x: screenX - otherPos.x, y: screenY - otherPos.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color } });
+            // Enhanced boundary detection with particle transfer
+            const inOtherWindow = otherPos &&
+                screenX >= otherPos.x &&
+                screenX <= otherPos.x + otherPos.width &&
+                screenY >= otherPos.y &&
+                screenY <= otherPos.y + otherPos.height;
+
+            if (inOtherWindow) {
+                channel.postMessage({
+                    type: 'particle_transfer',
+                    target: targetId,
+                    particle: {
+                        x: screenX - otherPos.x,
+                        y: screenY - otherPos.y,
+                        vx: p.vx,
+                        vy: p.vy,
+                        life: p.life,
+                        color: p.color
+                    }
+                });
                 list.splice(i, 1);
                 continue;
             }
 
-            const ghostThreshold = 50;
-            if (otherPos && (p.x > myPos.width - ghostThreshold || p.x < ghostThreshold || p.y > myPos.height - ghostThreshold || p.y < ghostThreshold)) {
-                channel.postMessage({ type: 'ghost_particle', target: targetId, particle: { x: screenX - otherPos.x, y: screenY - otherPos.y, vx: p.vx, vy: p.vy, life: p.life, color: p.color } });
+            // Enhanced ghost particles at boundaries
+            const ghostThreshold = 30;
+            const nearBoundary =
+                p.x > myPos.width - ghostThreshold ||
+                p.x < ghostThreshold ||
+                p.y > myPos.height - ghostThreshold ||
+                p.y < ghostThreshold;
+
+            if (otherPos && nearBoundary) {
+                channel.postMessage({
+                    type: 'ghost_particle',
+                    target: targetId,
+                    particle: {
+                        x: screenX - otherPos.x,
+                        y: screenY - otherPos.y,
+                        vx: p.vx,
+                        vy: p.vy,
+                        life: p.life,
+                        color: p.color
+                    }
+                });
             }
 
             p.draw(blendColor, blendAmount);
@@ -299,18 +397,32 @@
 
     function drawBackground() {
         if (canvas.width === 0 || canvas.height === 0) return;
+
+        // Draw nebula
         nebulaColors.forEach(neb => {
             const grad = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-            grad.addColorStop(0, neb.color); grad.addColorStop(1, 'rgba(0,0,5,0)');
-            ctx.fillStyle = grad; ctx.fillRect(0,0, canvas.width, canvas.height);
+            grad.addColorStop(0, neb.color);
+            grad.addColorStop(1, 'rgba(0,0,5,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
+
+        // Draw stars with parallax effect
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
-            const x = (star.x - window.screenX / (star.z * 5)) % canvas.width;
-            const y = (star.y - window.screenY / (star.z * 5)) % canvas.height;
+            const parallaxX = window.screenX / (star.z * 10);
+            const parallaxY = window.screenY / (star.z * 10);
+            let x = (star.x - parallaxX) % canvas.width;
+            let y = (star.y - parallaxY) % canvas.height;
+
+            if (x < 0) x += canvas.width;
+            if (y < 0) y += canvas.height;
+
             const size = (3 - star.z) * 0.5;
             ctx.globalAlpha = 1 / star.z * 0.5;
-            ctx.beginPath(); ctx.arc(x < 0 ? x + canvas.width : x, y < 0 ? y + canvas.height : y, size, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
         });
         ctx.globalAlpha = 1;
     }
@@ -320,18 +432,36 @@
         const pulse = Math.sin(Date.now() * 0.002) * 5;
         const radius = baseRadius + pulse;
 
-        ctx.strokeStyle = color + '80'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = color + '40'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2); ctx.stroke();
+        // Core rings
+        ctx.strokeStyle = color + '80';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2);
+        ctx.stroke();
 
+        ctx.strokeStyle = color + '40';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Core glow
         for (let i = 4; i > 0; i--) {
             const bloomRadius = radius + i * 10;
             const grad = ctx.createRadialGradient(x, y, radius, x, y, bloomRadius);
-            grad.addColorStop(0, color + '20'); grad.addColorStop(1, color + '00');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, bloomRadius, 0, Math.PI * 2); ctx.fill();
+            grad.addColorStop(0, color + '20');
+            grad.addColorStop(1, color + '00');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, bloomRadius, 0, Math.PI * 2);
+            ctx.fill();
         }
-        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+
+        // Core body
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
         ctx.globalAlpha = 1.0;
     }
 
@@ -339,13 +469,30 @@
         if (popupBlocked) {
             infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Pop-up Blocked`;
             openBtn.style.display = 'block';
-        } else { infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`; }
+        } else {
+            infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`;
+        }
         drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
     }
 
     // --- HELPERS ---
-    function getMyPosition() { return { x: window.screenX, y: window.screenY, width: window.outerWidth, height: window.outerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 }; }
-    function calculateDistance(pos1, pos2) { const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2); const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2); return { dist: Math.sqrt(dx * dx + dy * dy) }; }
+    function getMyPosition() {
+        return {
+            x: window.screenX,
+            y: window.screenY,
+            width: window.outerWidth,
+            height: window.outerHeight,
+            cx: window.innerWidth / 2,
+            cy: window.innerHeight / 2
+        };
+    }
+
+    function calculateDistance(pos1, pos2) {
+        const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
+        const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
+        return { dist: Math.sqrt(dx * dx + dy * dy) };
+    }
+
     function lerpColor(color1, color2, amount) {
         const c1 = color1.match(/\d+/g).map(Number);
         const c2 = color2.match(/\d+/g).map(Number);
