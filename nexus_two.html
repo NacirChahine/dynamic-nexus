@@ -117,7 +117,7 @@
                 this.vy += (dy / dist) * attractionForce;
             }
 
-            // Update path angle for wave direction
+            // Update path angle for a wave direction
             if (this.targetX && this.targetY) {
                 this.pathAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
             }
@@ -151,8 +151,8 @@
             const tailY = drawY - this.vy * tailLength;
 
             const grad = ctx.createLinearGradient(drawX, drawY, tailX, tailY);
-            grad.addColorStop(0, finalColor.replace(/[\d\.]+\)$/g, `${alpha * flicker})`));
-            grad.addColorStop(1, finalColor.replace(/[\d\.]+\)$/g, `0)`));
+            grad.addColorStop(0, finalColor.replace(/[\d.]+\)$/g, `${alpha * flicker})`));
+            grad.addColorStop(1, finalColor.replace(/[\d.]+\)$/g, `0)`));
 
             ctx.strokeStyle = grad;
             ctx.lineWidth = 2.5; // Slightly thicker lines
@@ -407,7 +407,7 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
 
-        // Draw stars with parallax effect
+        // Draw stars with a parallax effect
         ctx.fillStyle = '#FFF';
         stars.forEach(star => {
             const parallaxX = window.screenX / (star.z * 10);
