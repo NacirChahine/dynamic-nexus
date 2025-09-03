@@ -61,7 +61,8 @@
 <canvas id="canvas"></canvas>
 <button id="openWindowBtn" style="display: none;">Launch Nexus 1</button>
 
-<script>
+<script type="module">
+        import { getClientAreaPosition, resizeCanvasHiDPI, drawBackgroundShared, lerpColor, calculateDistance, Particle, updateParticleListShared, drawCore, drawPartnerCoreOverlay, drawMergeArcs } from './nexus_shared.js';
     // --- ENHANCED CONFIGURATION ---
     const WINDOW_ID = 2;
     const ATTRACTION_RADIUS = 900;
@@ -93,106 +94,44 @@
     let partnerFound = false;
     let popupBlocked = false;
 
-    // --- ENHANCED PARTICLE CLASS WITH WAVY FILAMENTS ---
-    class Particle {
-        constructor({x, y, vx = 0, vy = 0, life = Math.random() * PARTICLE_LIFESPAN, color, targetX, targetY}) {
-            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
-            this.life = life; this.baseLife = this.life > 0 ? this.life : PARTICLE_LIFESPAN;
-            this.color = color;
-            this.wavePhase = Math.random() * Math.PI * 2;
-            this.waveAmplitude = Math.random() * 15 + 5; // Increased amplitude
-            this.waveFreq = Math.random() * 0.1 + 0.1; // Increased frequency
-            this.targetX = targetX;
-            this.targetY = targetY;
-            this.pathAngle = targetX && targetY ? Math.atan2(targetY - y, targetX - x) : 0;
-        }
-
-        update(attractorX, attractorY, attractionForce) {
-            const dx = attractorX - this.x;
-            const dy = attractorY - this.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist > 1) {
-                this.vx += (dx / dist) * attractionForce;
-                this.vy += (dy / dist) * attractionForce;
-            }
-
-            // Update path angle for a wave direction
-            if (this.targetX && this.targetY) {
-                this.pathAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
-            }
-
-            this.x += this.vx;
-            this.y += this.vy;
-            this.vx *= 0.98;
-            this.vy *= 0.98;
-            this.life--;
-        }
-
-        draw(blendColor = null, blendAmount = 0) {
-            let finalColor = this.color;
-            if (blendColor && blendAmount > 0) {
-                finalColor = lerpColor(this.color, blendColor, blendAmount);
-            }
-
-            const alpha = (this.life / this.baseLife) * 0.9;
-            const flicker = Math.random() * 0.2 + 0.8;
-
-            // Enhanced wave effect with directional waves
-            const waveOffset = Math.sin(this.life * this.waveFreq + this.wavePhase) * this.waveAmplitude;
-            const perpX = -Math.sin(this.pathAngle);
-            const perpY = Math.cos(this.pathAngle);
-
-            const drawX = this.x + perpX * waveOffset;
-            const drawY = this.y + perpY * waveOffset;
-
-            const tailLength = 8 + (this.waveAmplitude/2);
-            const tailX = drawX - this.vx * tailLength;
-            const tailY = drawY - this.vy * tailLength;
-
-            const grad = ctx.createLinearGradient(drawX, drawY, tailX, tailY);
-            grad.addColorStop(0, finalColor.replace(/[\d.]+\)$/g, `${alpha * flicker})`));
-            grad.addColorStop(1, finalColor.replace(/[\d.]+\)$/g, `0)`));
-
-            ctx.strokeStyle = grad;
-            ctx.lineWidth = 2.5; // Slightly thicker lines
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(drawX, drawY);
-            ctx.lineTo(tailX, tailY);
-            ctx.stroke();
-        }
-    }
+    // Particle class moved to shared module
 
     // --- INITIALIZATION ---
     function init() {
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('focus', () => channel.postMessage({ type: 'focus', id: WINDOW_ID }));
+        window.addEventListener('blur', () => channel.postMessage({ type: 'blur', id: WINDOW_ID }));
+        window.addEventListener('beforeunload', () => channel.postMessage({ type: 'closed', id: WINDOW_ID }));
         openBtn.addEventListener('click', () => {
-            window.open('nexus_one.html', 'PortalWindow1', 'width=400,height=400,left=100,top=200');
-            openBtn.style.display = 'none';
-            popupBlocked = false;
+            const newWindow = window.open('nexus_one.html', 'PortalWindow1', 'width=480,height=420,left=100,top=200');
+            if (!newWindow) {
+                popupBlocked = true;
+                infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Pop-up Blocked`;
+            } else {
+                popupBlocked = false;
+                openBtn.style.display = 'none';
+            }
         });
         resizeCanvas();
 
         channel.postMessage({ type: 'ping', id: WINDOW_ID });
-        setTimeout(() => {
-            if (!partnerFound) {
-                const newWindow = window.open('nexus_one.html', 'PortalWindow1', 'width=400,height=400,left=100,top=200');
-                if (!newWindow) popupBlocked = true;
+        const attemptOpen = () => {
+            if (!partnerFound && !popupBlocked) {
+                const w = window.open('nexus_one.html', 'PortalWindow1', 'width=480,height=420,left=100,top=200');
+                if (!w) {
+                    popupBlocked = true;
+                    openBtn.style.display = 'block';
+                }
             }
-        }, 250);
+        };
+        setTimeout(attemptOpen, 250);
+        setTimeout(attemptOpen, 2000);
 
         animate();
     }
 
     function resizeCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = Math.round(window.innerWidth * dpr);
-        canvas.height = Math.round(window.innerHeight * dpr);
-        canvas.style.width = window.innerWidth + 'px';
-        canvas.style.height = window.innerHeight + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        resizeCanvasHiDPI(canvas, ctx, window.innerWidth, window.innerHeight);
 
         stars = [];
         const w = window.innerWidth;
@@ -220,6 +159,11 @@
             case 'pos1':
                 openerWindowPos = event.data.data;
                 lastSeenTimestamp = Date.now();
+                break;
+            case 'closed':
+                partnerFound = false;
+                lastSeenTimestamp = 0;
+                openBtn.style.display = 'block';
                 break;
             case 'particle_transfer':
                 if (event.data.target === WINDOW_ID) {
@@ -253,9 +197,9 @@
     // --- MAIN ANIMATION LOOP ---
     function animate() {
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        drawBackground();
+        drawBackgroundShared(ctx, stars, nebulaColors, window.screenX, window.screenY, window.innerWidth, window.innerHeight);
 
-        const myPos = getMyPosition();
+        const myPos = getClientAreaPosition();
         channel.postMessage({ type: 'pos2', data: myPos });
 
         ringAngle1 += 0.01;
@@ -279,22 +223,29 @@
         } else if (dist < ATTRACTION_RADIUS) {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Filaments Active`;
             updateAndDrawFilaments(myPos, openerWindowPos, dist);
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
+            drawCore(ctx, myPos.cx, myPos.cy, CORE_COLOR, 40, ringAngle1, ringAngle2);
+            // Energy arcs between cores
+            drawMergeArcs(ctx, myPos.cx, myPos.cy, openerWindowPos.x - myPos.x + openerWindowPos.cx, openerWindowPos.y - myPos.y + openerWindowPos.cy);
         } else {
             infoStatus.innerHTML = `<strong>Core Nexus 2</strong><br>Status: Stable`;
-            drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
+            drawCore(ctx, myPos.cx, myPos.cy, CORE_COLOR, 40, ringAngle1, ringAngle2);
         }
 
-        ghostParticles.forEach(p => new Particle(p).draw());
+        // Show partner core overlay for visibility when overlapping
+        drawPartnerCoreOverlay(ctx, myPos, openerWindowPos, '#3b82f6', ringAngle1, ringAngle2);
+
+        ghostParticles.forEach(p => new Particle(p).draw(ctx));
         ghostParticles = [];
 
         requestAnimationFrame(animate);
     }
+        // Always show partner core overlay for visibility when overlapping
+        drawPartnerCoreOverlay(ctx, myPos, openerWindowPos, '#3b82f6', ringAngle1, ringAngle2);
 
     // --- DRAWING & LOGIC FUNCTIONS ---
     function drawMergedState(myPos, isTop) {
         const coreRadius = isTop ? 60 : 55;
-        drawCore(myPos.cx, myPos.cy, MERGED_COLOR, coreRadius, isTop ? 1.0 : 0.7);
+        drawCore(ctx, myPos.cx, myPos.cy, MERGED_COLOR, coreRadius, ringAngle1, ringAngle2, isTop ? 1.0 : 0.7);
         if (particles.length < PARTICLE_COUNT) {
             particles.push(new Particle({
                 x: myPos.cx,
@@ -304,7 +255,7 @@
                 color: MERGED_PARTICLE_COLOR
             }));
         }
-        updateParticleList(particles, myPos, openerWindowPos, myPos.cx, myPos.cy, -0.02, 1);
+        updateParticleListShared(ctx, channel, particles, myPos, openerWindowPos, myPos.cx, myPos.cy, -0.02, 1);
     }
 
     function updateAndDrawFilaments(myPos, otherPos, dist) {
@@ -339,142 +290,13 @@
         const attractionForce = 1 - (dist / ATTRACTION_RADIUS);
         const blendAmount = Math.max(0, 1 - (dist - MERGE_DISTANCE) / (ATTRACTION_RADIUS / 2 - MERGE_DISTANCE));
 
-        updateParticleList(particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
-        updateParticleList(transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
+        updateParticleListShared(ctx, channel, particles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
+        updateParticleListShared(ctx, channel, transferredParticles, myPos, otherPos, attractorX, attractorY, attractionForce, 1, HOT_PARTICLE_COLOR, blendAmount);
     }
 
-    function updateParticleList(list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId, blendColor, blendAmount) {
-        for (let i = list.length - 1; i >= 0; i--) {
-            const p = list[i];
-            p.update(attractorX, attractorY, attractionForce * 0.5);
-            const screenX = myPos.x + p.x;
-            const screenY = myPos.y + p.y;
+    // updateParticleList moved to shared module
 
-            // Enhanced boundary detection with particle transfer
-            const inOtherWindow = otherPos &&
-                screenX >= otherPos.x &&
-                screenX <= otherPos.x + otherPos.width &&
-                screenY >= otherPos.y &&
-                screenY <= otherPos.y + otherPos.height;
-
-            if (inOtherWindow) {
-                // Draw once in current window before transferring to avoid a 1-frame visual gap
-                p.draw(blendColor, blendAmount);
-                channel.postMessage({
-                    type: 'particle_transfer',
-                    target: targetId,
-                    particle: {
-                        x: screenX - otherPos.x,
-                        y: screenY - otherPos.y,
-                        vx: p.vx,
-                        vy: p.vy,
-                        life: p.life,
-                        color: p.color
-                    }
-                });
-                list.splice(i, 1);
-                continue;
-            }
-
-            // Enhanced ghost particles at boundaries
-            const ghostThreshold = 30;
-            const nearBoundary =
-                p.x > myPos.width - ghostThreshold ||
-                p.x < ghostThreshold ||
-                p.y > myPos.height - ghostThreshold ||
-                p.y < ghostThreshold;
-
-            if (otherPos && nearBoundary) {
-                channel.postMessage({
-                    type: 'ghost_particle',
-                    target: targetId,
-                    particle: {
-                        x: screenX - otherPos.x,
-                        y: screenY - otherPos.y,
-                        vx: p.vx,
-                        vy: p.vy,
-                        life: p.life,
-                        color: p.color
-                    }
-                });
-            }
-
-            p.draw(blendColor, blendAmount);
-            if (p.life <= 0) list.splice(i, 1);
-        }
-    }
-
-    function drawBackground() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        if (w === 0 || h === 0) return;
-
-        // Draw nebula
-        nebulaColors.forEach(neb => {
-            const grad = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-            grad.addColorStop(0, neb.color);
-            grad.addColorStop(1, 'rgba(0,0,5,0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, w, h);
-        });
-
-        // Draw stars with a parallax effect
-        ctx.fillStyle = '#FFF';
-        stars.forEach(star => {
-            const parallaxX = window.screenX / (star.z * 10);
-            const parallaxY = window.screenY / (star.z * 10);
-            let x = (star.x - parallaxX) % w;
-            let y = (star.y - parallaxY) % h;
-
-            if (x < 0) x += w;
-            if (y < 0) y += h;
-
-            const size = (3 - star.z) * 0.5;
-            ctx.globalAlpha = 1 / star.z * 0.5;
-            ctx.beginPath();
-            ctx.arc(x, y, size, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        ctx.globalAlpha = 1;
-    }
-
-    function drawCore(x, y, color, baseRadius, opacity = 1.0) {
-        ctx.globalAlpha = opacity;
-        const pulse = Math.sin(Date.now() * 0.002) * 5;
-        const radius = baseRadius + pulse;
-
-        // Core rings
-        ctx.strokeStyle = color + '80';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.ellipse(x, y, radius * 1.5, radius * 0.5, ringAngle1, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = color + '40';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(x, y, radius * 0.8, radius * 1.8, ringAngle2, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Core glow
-        for (let i = 4; i > 0; i--) {
-            const bloomRadius = radius + i * 10;
-            const grad = ctx.createRadialGradient(x, y, radius, x, y, bloomRadius);
-            grad.addColorStop(0, color + '20');
-            grad.addColorStop(1, color + '00');
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(x, y, bloomRadius, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Core body
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
-    }
+    // drawBackground and drawCore moved to shared module
 
     function handleNoLink(myPos) {
         if (popupBlocked) {
@@ -487,36 +309,7 @@
     }
 
     // --- HELPERS ---
-    function getMyPosition() {
-        // Compute client-area (inner) top-left in screen coordinates
-        const sideBorder = (window.outerWidth - window.innerWidth) / 2;
-        const topBorder = (window.outerHeight - window.innerHeight) - sideBorder; // assume bottom border ~= sideBorder
-        const clientLeftOnScreen = window.screenX + sideBorder;
-        const clientTopOnScreen = window.screenY + topBorder;
-        return {
-            x: clientLeftOnScreen,
-            y: clientTopOnScreen,
-            width: window.innerWidth,
-            height: window.innerHeight,
-            cx: window.innerWidth / 2,
-            cy: window.innerHeight / 2
-        };
-    }
-
-    function calculateDistance(pos1, pos2) {
-        const dx = (pos1.x + pos1.width / 2) - (pos2.x + pos2.width / 2);
-        const dy = (pos1.y + pos1.height / 2) - (pos2.y + pos2.height / 2);
-        return { dist: Math.sqrt(dx * dx + dy * dy) };
-    }
-
-    function lerpColor(color1, color2, amount) {
-        const c1 = color1.match(/\d+/g).map(Number);
-        const c2 = color2.match(/\d+/g).map(Number);
-        const r = Math.round(c1[0] + (c2[0] - c1[0]) * amount);
-        const g = Math.round(c1[1] + (c2[1] - c1[1]) * amount);
-        const b = Math.round(c1[2] + (c2[2] - c1[2]) * amount);
-        return `rgba(${r}, ${g}, ${b}, 0.9)`;
-    }
+    // getMyPosition, calculateDistance, lerpColor moved to shared module
 
     init();
 </script>
