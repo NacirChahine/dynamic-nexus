@@ -103,68 +103,15 @@ export function calculateDistance(pos1, pos2) {
 
 export class Particle {
   constructor({ x, y, vx = 0, vy = 0, life = Math.random() * 180, color, targetX, targetY, }) {
-    this.x = x;
-    this.y = y;
-    this.vx = vx;
-    this.vy = vy;
-    this.life = life;
-    this.baseLife = this.life > 0 ? this.life : 180;
+    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.life = life; this.baseLife = this.life > 0 ? this.life : 180;
     this.color = color;
     this.wavePhase = Math.random() * Math.PI * 2;
     this.waveAmplitude = Math.random() * 15 + 5;
     this.waveFreq = Math.random() * 0.1 + 0.1;
-    this.targetX = targetX;
-    this.targetY = targetY;
+    this.targetX = targetX; this.targetY = targetY;
     this.pathAngle = targetX && targetY ? Math.atan2(targetY - y, targetX - x) : 0;
   }
-
-export function drawPartnerCoreOverlay(ctx, myPos, otherPos, color, ringAngle1, ringAngle2) {
-  if (!otherPos) return;
-  const px = otherPos.x - myPos.x + otherPos.cx;
-  const py = otherPos.y - myPos.y + otherPos.cy;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  drawCore(ctx, px, py, color, 28, ringAngle1, ringAngle2, 0.6);
-  // outline for visibility
-  ctx.strokeStyle = '#ffffff30';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(px, py, 30, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-}
-
-export function drawMergeArcs(ctx, x1, y1, x2, y2, color = '#a855f7') {
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = Math.hypot(dx, dy);
-  const normX = -dy / (dist || 1);
-  const normY = dx / (dist || 1);
-  const t = performance.now() * 0.001;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (let i = -1; i <= 1; i++) {
-    const sway = Math.sin(t * 2 + i) * (dist * 0.06);
-    const cpx = midX + normX * (sway + i * 20);
-    const cpy = midY + normY * (sway - i * 20);
-    ctx.strokeStyle = color + '80';
-    ctx.lineWidth = 1.5 + (i === 0 ? 0.5 : 0);
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.quadraticCurveTo(cpx, cpy, x2, y2);
-    ctx.stroke();
-  }
-  // pulsing ring at midpoint
-  const pulse = (Math.sin(t * 3) + 1) * 0.5;
-  ctx.strokeStyle = color + '60';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(midX, midY, 12 + pulse * 8, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-}
 
   update(attractorX, attractorY, attractionForce) {
     const dx = attractorX - this.x;
@@ -174,24 +121,19 @@ export function drawMergeArcs(ctx, x1, y1, x2, y2, color = '#a855f7') {
       this.vx += (dx / dist) * attractionForce;
       this.vy += (dy / dist) * attractionForce;
     }
-    // Update path angle for directional waves
     if (this.targetX && this.targetY) {
       this.pathAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
     }
-    // Add gentle spiral component toward target
     const spiralStrength = 0.02 * attractionForce;
     this.vx += -Math.sin(this.pathAngle) * spiralStrength;
     this.vy += Math.cos(this.pathAngle) * spiralStrength;
-    // Turbulence (simple time-varying field)
     const t = performance.now() * 0.001;
     const noise = Math.sin(0.15 * this.x + 0.2 * this.y + t * 2 + this.wavePhase);
     this.vx += noise * 0.05;
     this.vy += Math.cos(0.2 * this.x - 0.15 * this.y + t * 1.7) * 0.05;
 
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx *= 0.98;
-    this.vy *= 0.98;
+    this.x += this.vx; this.y += this.vy;
+    this.vx *= 0.98; this.vy *= 0.98;
     this.life--;
   }
 
@@ -222,6 +164,52 @@ export function drawMergeArcs(ctx, x1, y1, x2, y2, color = '#a855f7') {
     ctx.lineTo(tailX, tailY);
     ctx.stroke();
   }
+}
+
+export function drawPartnerCoreOverlay(ctx, myPos, otherPos, color, ringAngle1, ringAngle2) {
+  if (!otherPos) return;
+  const px = otherPos.x - myPos.x + otherPos.cx;
+  const py = otherPos.y - myPos.y + otherPos.cy;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  drawCore(ctx, px, py, color, 28, ringAngle1, ringAngle2, 0.6);
+  ctx.strokeStyle = '#ffffff30';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(px, py, 30, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+export function drawMergeArcs(ctx, x1, y1, x2, y2, color = '#a855f7') {
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  const normX = -dy / (dist || 1);
+  const normY = dx / (dist || 1);
+  const t = performance.now() * 0.001;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = -1; i <= 1; i++) {
+    const sway = Math.sin(t * 2 + i) * (dist * 0.06);
+    const cpx = midX + normX * (sway + i * 20);
+    const cpy = midY + normY * (sway - i * 20);
+    ctx.strokeStyle = color + '80';
+    ctx.lineWidth = 1.5 + (i === 0 ? 0.5 : 0);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+    ctx.stroke();
+  }
+  const pulse = (Math.sin(t * 3) + 1) * 0.5;
+  ctx.strokeStyle = color + '60';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(midX, midY, 12 + pulse * 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 export function updateParticleListShared(ctx, channel, list, myPos, otherPos, attractorX, attractorY, attractionForce, targetId, blendColor, blendAmount) {
