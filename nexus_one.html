@@ -304,7 +304,8 @@
         } else {
             infoStatus.innerHTML = `<strong>Core Nexus 1</strong><br>Status: Awaiting Link`;
         }
-        drawCore(myPos.cx, myPos.cy, CORE_COLOR, 40);
+        // Draw core while waiting (use shared drawCore with context and ring angles)
+        drawCore(ctx, myPos.cx, myPos.cy, CORE_COLOR, 40, ringAngle1, ringAngle2);
     }
 
     // --- HELPERS ---
